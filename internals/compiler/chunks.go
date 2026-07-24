@@ -73,6 +73,6 @@ func GetLine(chunk Chunk, offset int) int {
 	return chunk.Lines[idx].Line
 }
 
-func LoadLongConst(a, b, c uint8) uint8 {
-	return (a & 0xff) | (b << 8) | (c << 16)
+func LoadLongConst(a, b, c uint8) uint32 {
+	return (uint32(a) & 0xff) | (uint32(b) << 8) | (uint32(c) << 16)
 }

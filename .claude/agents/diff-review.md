@@ -1,12 +1,12 @@
 ---
 name: diff-review
 description: >
-  MEDIUM tier (sonnet). Reviews the current working diff (or a named commit
+  MEDIUM tier (sonnet 4.6). Reviews the current working diff (or a named commit
   range) for correctness against the project's phase checklists — lexer,
   parser, compiler/bytecode, VM, memory. Also runs and interprets tests and
   benchmarks (go test, go vet, -bench, benchstat). Use for routine review and
   measurement tasks. Does not edit code.
-model: sonnet
+model: claude-sonnet-4-6
 tools: Read, Grep, Glob, Bash
 ---
 

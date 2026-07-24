@@ -36,7 +36,7 @@ to the cheapest tier that can complete it, via the agents in `.claude/agents/`.
 | Task | Tier | Delegate to |
 |---|---|---|
 | Find/locate/summarize, file inventories, git-history questions | low | `scout` (haiku) |
-| Review the working diff, run tests/benchmarks, routine explanations | medium | `diff-review` (sonnet) |
+| Review the working diff, run tests/benchmarks, routine explanations | medium | `diff-review` (sonnet 4.6) |
 | unsafe/arena/GC, VM invariants, architecture, profiled perf work | high | `deep-review` (opus) |
 | Anything answerable from context already in the conversation | none | Answer directly — spawning any agent costs more than answering. |
 
@@ -58,3 +58,7 @@ Don't delegate work the main agent can do in 1–2 tool calls.
   failures already name the `file:line`.
 - **No perf claim without a measurement** (`go test -bench . -benchmem`,
   `benchstat`, `pprof`) — this is also a correctness rule for this project.
+- **Calibrated output length.** Answers should be complete enough that the
+  human doesn't need a follow-up, and no longer: short answer + one reason for
+  simple questions, the full teaching arc only for genuinely new concepts.
+  Never re-explain something already covered this session.
