@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "defaultMode": "plan",
+    "allows": [
+      "Read", "Grep", "Glob",
+      "Bash(go test:*)", "Bash(go build:*)", "Bash(go vet:*)",
+      "Bash(go test -bench:*)", "Bash(go tool pprof:*)",
+      "Bash(git status)", "Bash(git diff:*)", "Bash(git log:*)"
+    ],
+    "deny": [
+      "Read(./.env)", "Read(./.env.*)", "Read(./secrets/**)",
+      "Bash(rm -rf:*)", "Bash(git push:*)"
+    ]
+  },
+  "outputStyle": "Concise"
+}
