@@ -12,5 +12,6 @@ func NewCompiler() *Compiler {
 
 func (c *Compiler) Compile(source []byte) {
 	scanner := lexer.NewScanner(source)
+	scanner.ScanToken() // start the scanner?
 
 }

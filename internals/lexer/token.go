@@ -1,5 +1,7 @@
 package lexer
 
+import "unsafe"
+
 type TokenType uint8
 
 const (
@@ -50,12 +52,22 @@ const (
 	VAR
 	WHILE
 
+	ERROR
 	EOF
 )
 
 type Token struct {
 	ttype  TokenType
-	start  byte
+	start  unsafe.Pointer
 	length int
 	line   int
+}
+
+func NewToken(ttype TokenType, start unsafe.Pointer, length int, line int) Token {
+	return Token{
+		ttype:  ttype,
+		start:  start,
+		length: length,
+		line:   line,
+	}
 }
