@@ -2,7 +2,7 @@ package value
 
 import (
 	"fmt"
-	mem "go-bytecode-interpter/internals/memory"
+	mem "go-bytecode-interpreter/internals/memory"
 )
 
 type Value float64

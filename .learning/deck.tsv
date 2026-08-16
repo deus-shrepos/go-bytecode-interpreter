@@ -1,0 +1,7 @@
+#separator:tab
+#html:false
+#tags column:3
+Front	Back	Tags
+In `unsafe.Slice((*T)(ptr), n)`, what actually determines how many bytes get read?	The byte span is `n * unsafe.Sizeof(T)` — the pointer's element type sets the stride, not `n` alone. Casting to the wrong pointer type (e.g. `(*string)` when the underlying data is raw bytes) reads `n*16` bytes instead of `n*1`.	lexer concept
+Does `unsafe.Slice(ptr, n)` read or validate memory at the moment it's called?	No — it only builds a slice header (`{Data: ptr, Len: n, Cap: n}`). No bytes are touched until something later indexes into the result.	lexer concept
+`GetLexme()` used `unsafe.Slice((*string)(t.Start), t.Length)` and crashed for some tokens but not others, seemingly length-dependent. What was actually going on?	It fabricates `Length` fake 16-byte string headers out of raw source bytes. Whether it crashes depends on whether a fabricated header's `Len` field happens to be nonzero (triggering a dereference of an equally-fabricated `Data` pointer) — determined by whatever bytes the allocator placed adjacent in the heap, not by token length. Longer `Length` means more fabricated headers, hence higher odds of hitting a bad one, but there is no deterministic boundary; this is undefined behavior, not a length threshold.	lexer gotcha debug

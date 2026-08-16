@@ -2,10 +2,10 @@ package vm
 
 import (
 	"fmt"
-	c "go-bytecode-interpter/internals/compiler"
-	"go-bytecode-interpter/internals/debug"
-	"go-bytecode-interpter/internals/memory"
-	"go-bytecode-interpter/internals/value"
+	c "go-bytecode-interpreter/internals/compiler"
+	"go-bytecode-interpreter/internals/debug"
+	"go-bytecode-interpreter/internals/memory"
+	"go-bytecode-interpreter/internals/value"
 	"unsafe"
 )
 

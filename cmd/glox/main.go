@@ -2,7 +2,7 @@ package main
 
 import (
 	"fmt"
-	"go-bytecode-interpter/internals/repl"
+	"go-bytecode-interpreter/internals/repl"
 	"os"
 )
 

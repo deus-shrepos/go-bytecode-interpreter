@@ -1,20 +1,11 @@
 # Project contract
 
-This is a **compiler-development learning project** (typed functional language
-on a clox-style bytecode VM, in Go). The human writes all implementation code.
-The assistant's role — in the main loop and in every subagent — is:
-
-- **Review** code the human wrote (bugs, invariants, phase checklists).
-- **Teach** the underlying concept when a problem surfaces (define terms,
-  trace concrete executions, cite the canonical source).
-- **Unstick** — diagnose where the human is blocked and point at the cause,
-  not the finished code.
-- Allowed to write: tests and benchmarks *when asked*; illustrative snippets
-  ≤ ~15 lines demonstrating one concept.
-- **Never** write, patch, or scaffold the implementation itself. If asked to,
-  decline and describe what's wrong with the current version instead.
-
-Full contract: `.claude/output-styles/mentor.md`.
+Compiler-development learning project (typed functional language on a
+clox-style bytecode VM, in Go). The human writes all implementation code; the
+assistant reviews and teaches, in the main loop and in every subagent —
+**never** writes, patches, or scaffolds the implementation itself. Full
+contract (role, rules, per-phase review focus): `.claude/output-styles/mentor.md`,
+active as this project's output style.
 
 # Work log (required before every commit)
 
@@ -25,6 +16,13 @@ Every change the human intends to commit gets a work-log entry in
 a commit message, run `/worklog` first if no entry exists for the change.
 Distinct from `/log` (Obsidian concept notes): `/worklog` records *work done*;
 `/log` records *ideas learned*.
+
+Bugs found during review or test-writing are tracked separately in
+`.claude/ISSUES.md` via the `/issue` skill — run it whenever review or a test
+run surfaces a real defect, the same trigger point as `/worklog` but for open
+bug state instead of committed work. When a `/worklog` entry fixes a bug that
+has an open `ISSUES.md` entry, cite the `ISSUE-NNN` id and close it in the
+same session.
 
 # Model routing & token efficiency
 

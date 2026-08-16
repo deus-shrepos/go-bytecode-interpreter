@@ -2,8 +2,8 @@ package debug
 
 import (
 	"fmt"
-	"go-bytecode-interpter/internals/compiler"
-	_ "go-bytecode-interpter/internals/compiler"
+	"go-bytecode-interpreter/internals/compiler"
+	_ "go-bytecode-interpreter/internals/compiler"
 )
 
 func simpleInstr(opcode compiler.OpCode, offset int) int {

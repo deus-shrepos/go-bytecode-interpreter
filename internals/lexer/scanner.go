@@ -1,12 +1,16 @@
 package lexer
 
-import "unsafe"
+import (
+	"fmt"
+	"strings"
+	"unsafe"
+)
 
 type Scanner struct {
 	start   unsafe.Pointer
 	current unsafe.Pointer
 	line    int
-	source  []byte
+	source  []byte // arena?
 }
 
 func NewScanner(source []byte) *Scanner {
@@ -14,11 +18,13 @@ func NewScanner(source []byte) *Scanner {
 		start:   unsafe.Pointer(&source[0]),
 		current: unsafe.Pointer(&source[0]),
 		source:  source,
-		line:    0,
+		line:    1,
 	}
 }
 
 func (s *Scanner) ScanToken() Token {
+	// scan whitespace and advance
+	s.skipWhiteSpace()
 	// scan the current lexeme (at the start of it)
 	s.start = s.current
 	if s.isAtEnd() {
@@ -26,6 +32,12 @@ func (s *Scanner) ScanToken() Token {
 		return s.makeToken(EOF)
 	}
 	c := s.advance()
+	if isAlpha(c) {
+		return s.makeIdentifier()
+	}
+	if isDigit(c) {
+		return s.makeNumber()
+	}
 
 	switch c {
 	case '(':
@@ -50,15 +62,167 @@ func (s *Scanner) ScanToken() Token {
 		return s.makeToken(SLASH)
 	case '*':
 		return s.makeToken(STAR)
-	}
-	return s.errorToken("Unexpected Character.")
-}
+	case '!':
+		if s.match('=') {
+			return s.makeToken(BANG_EQUAL)
+		} else {
+			return s.makeToken(BANG)
+		}
+	case '=':
+		if s.match('=') {
+			return s.makeToken(EQUAL_EQUAL)
+		} else {
+			return s.makeToken(EQUAL)
+		}
 
+	case '<':
+		if s.match('=') {
+			return s.makeToken(LESS_EQUAL)
+		} else {
+			return s.makeToken(LESS)
+		}
+	case '>':
+		if s.match('=') {
+			return s.makeToken(GREATER_EQUAL)
+		} else {
+			return s.makeToken(GREATER)
+		}
+	case '"':
+		return s.string()
+
+	default:
+		return s.errorToken(fmt.Sprintf("Unexpected Token: %q (%d)", c, c))
+	}
+}
 func (s *Scanner) makeToken(ttype TokenType) Token {
 	return Token{
-		ttype:  ttype,
-		start:  s.start,
-		length: *(*int)(unsafe.Add(s.start, -uintptr(s.current))), // lexeme[n] - lexeme[0]
+		Type:   ttype,
+		Start:  s.start,
+		Length: (int)(uintptr(unsafe.Add(s.current, -uintptr(s.start)))), // lexeme[n] - lexeme[0]
+		Line:   s.line,
+	}
+}
+
+func (s *Scanner) skipWhiteSpace() {
+	for {
+		// return the current token and only advance
+		// when a whitespace byte is encountered
+		c := s.peek()
+		switch c {
+		case '\t', '\r', ' ':
+			s.advance()
+		case '\n':
+			s.line++
+			s.advance()
+		case '/':
+			if s.peekNext() == '/' {
+				// it's a comment and we consume until we reach newline
+				// or we are the end
+				for s.peek() != '\n' && !s.isAtEnd() {
+					s.advance()
+				}
+			} else {
+				// we return back to scanToken() and advance as normal
+				return
+			}
+		default:
+			return
+		}
+	}
+}
+func (s *Scanner) string() Token {
+	for s.peek() != '"' && !s.isAtEnd() {
+		if s.peek() == '\n' {
+			s.line++
+		}
+		s.advance()
+	}
+
+	if s.isAtEnd() {
+		return s.errorToken("Unterminated string")
+	}
+	s.advance() // need to close the qoute
+	return s.makeToken(STRING)
+}
+
+func (s *Scanner) makeNumber() Token {
+	// find the digit and keep advancing
+	for isDigit(s.peek()) {
+		s.advance()
+	}
+
+	// scan afer the "." part of the digit, the fractional part
+	if s.peek() == '.' && isDigit(s.peekNext()) {
+		s.advance() // consume "."
+		for isDigit(s.peek()) {
+			s.advance()
+		}
+	}
+	return s.makeToken(NUMBER)
+}
+
+func (s *Scanner) makeIdentifier() Token {
+	for isAlpha(s.peek()) || isDigit(s.peek()) {
+		s.advance()
+	}
+	return s.makeToken(identifierType())
+}
+
+func (s *Scanner) peek() byte {
+	return *(*byte)(s.current)
+}
+
+func (s *Scanner) peekNext() byte {
+	if s.isAtEnd() {
+		return 0x00
+	}
+	return *(*byte)(unsafe.Add(s.current, 1))
+}
+
+func (s *Scanner) match(b byte) bool {
+	if s.isAtEnd() {
+		return false
+	}
+	if *(*byte)(unsafe.Pointer(s.current)) != b {
+		return false
+	}
+	s.current = unsafe.Add(s.current, 1)
+	return true
+}
+
+func (s *Scanner) identifierType() TokenType {
+	switch *(*byte)(s.start) {
+	case 'a':
+		return s.checkKeyword(1, 2, "nd", AND)
+	case 'c':
+		return s.checkKeyword(1, 4, "lass", CLASS)
+	case 'e':
+		return s.checkKeyword(1, 4, "else", ELSE)
+	case 'i':
+		return s.checkKeyword(1, 1, "f", IF)
+	case 'n':
+		return s.checkKeyword(1, 2, "nil", NIL)
+	case 'o':
+		return s.checkKeyword(1, 1, "r", OR)
+	case 'p':
+		return s.checkKeyword(1, 4, "rint", PRINT)
+	case 'r':
+		return s.checkKeyword(1, 5, "eturn", RETURN)
+	case 's':
+		return s.checkKeyword(1, 4, "uper", SUPER)
+	case 'v':
+		return s.checkKeyword(1, 2, "ar", VAR)
+	case 'w':
+		return s.checkKeyword(1, 4, "hile", WHILE)
+	}
+
+	return IDENTIFIER
+}
+
+func (s *Scanner) checkKeyword(start int, length int, rest string, tokenType TokenType) TokenType {
+	if (calcPtrDiff(s.start, s.current) == (start + length)) ||
+		(1) {
+
 	}
 }
 
@@ -72,10 +236,28 @@ func (s *Scanner) advance() byte {
 }
 
 func (s *Scanner) errorToken(message string) Token {
+	byteString := []byte(message)
 	return Token{
-		ttype:  ERROR,
-		start:  unsafe.Pointer(&message),
-		length: len(message),
-		line:   s.line,
+		Type:   ERROR,
+		Start:  unsafe.Pointer(&byteString[0]),
+		Length: len(message),
+		Line:   s.line,
 	}
+}
+
+func memCompare(basePtr unsafe.Pointer, rest string, length int) int {
+	strSlice := unsafe.String((*byte)(basePtr), length)
+	return strings.Compare(strSlice, rest)
+}
+
+func isAlpha(c byte) bool {
+	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c == '_')
+}
+
+func isDigit(c byte) bool {
+	return c >= '0' && c <= '9'
+}
+
+func calcPtrDiff(a unsafe.Pointer, b unsafe.Pointer) int {
+	return (int)(uintptr(b) - uintptr(a))
 }

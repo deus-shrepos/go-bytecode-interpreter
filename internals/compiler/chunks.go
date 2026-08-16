@@ -1,8 +1,8 @@
 package compiler
 
 import (
-	"go-bytecode-interpter/internals/memory"
-	"go-bytecode-interpter/internals/value"
+	"go-bytecode-interpreter/internals/memory"
+	"go-bytecode-interpreter/internals/value"
 )
 
 type Lines struct {

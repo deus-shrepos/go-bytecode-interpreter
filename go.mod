@@ -1,3 +1,3 @@
-module go-bytecode-interpter
+module go-bytecode-interpreter
 
 go 1.26

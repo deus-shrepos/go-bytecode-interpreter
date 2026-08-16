@@ -1,6 +1,8 @@
 package lexer
 
-import "unsafe"
+import (
+	"unsafe"
+)
 
 type TokenType uint8
 
@@ -57,17 +59,21 @@ const (
 )
 
 type Token struct {
-	ttype  TokenType
-	start  unsafe.Pointer
-	length int
-	line   int
+	Type   TokenType
+	Start  unsafe.Pointer
+	Length int
+	Line   int
 }
 
 func NewToken(ttype TokenType, start unsafe.Pointer, length int, line int) Token {
 	return Token{
-		ttype:  ttype,
-		start:  start,
-		length: length,
-		line:   line,
+		Type:   ttype,
+		Start:  start,
+		Length: length,
+		Line:   line,
 	}
+}
+
+func (t *Token) GetLexme() string {
+	return unsafe.String((*byte)(t.Start), t.Length)
 }
