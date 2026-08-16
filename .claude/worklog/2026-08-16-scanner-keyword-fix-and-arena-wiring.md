@@ -2,7 +2,7 @@
 date: 2026-08-16
 phase: lexer
 files: [internals/lexer/scanner.go, internals/lexer/token.go, internals/compiler/compiler.go, internals/repl/repl.go, examples/scanner_text.glox, internals/lexer/tokentype_string.go]
-commit: pending
+commit: c81a9d0
 ---
 
 # Fix checkKeyword/identifierType build errors, add f/t keyword branches, wire memory.Arena into Compiler
