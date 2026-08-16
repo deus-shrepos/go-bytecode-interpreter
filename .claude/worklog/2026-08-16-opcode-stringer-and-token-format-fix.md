@@ -2,7 +2,7 @@
 date: 2026-08-16
 phase: compiler
 files: [internals/compiler/opcodes.go, internals/compiler/opcode_string.go, internals/compiler/opcodes_test.go, internals/lexer/token.go]
-commit: pending
+commit: bd5c751
 ---
 
 # Generate OpCode.String() via stringer, fix Token.String()'s %g/unsafe.Pointer mismatch
