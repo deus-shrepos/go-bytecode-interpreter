@@ -8,16 +8,18 @@ entry, and a regression gets a new ID that references the old one.
 
 ## Open
 
-### ISSUE-017 — `Token.String()` passes an `unsafe.Pointer` to `%g`
-- **Location:** `internals/lexer/token.go:84`
-- **Found:** 2026-08-16, `go vet ./...` run while writing the pending
-  scanner-keyword-fix worklog entry
-- **Detail:** `fmt.Sprintf("...start=%g...", ..., t.Start, ...)` passes
-  `t.Start` (`unsafe.Pointer`) to the `%g` (float) verb. `go vet` fails on
-  this, and because `go test` runs vet as part of its build step, this
-  single line blocks every test in `internals/lexer` from running at all
-  (`FAIL go-bytecode-interpreter/internals/lexer [build failed]`) — `go
-  build ./...` itself still succeeds since vet isn't part of a plain build.
+### ISSUE-019 — `vm_bench_test.go` imports the pre-rename module path
+- **Location:** `internals/vm/vm_bench_test.go:4-5`
+- **Found:** 2026-08-16, `go test ./...` run before committing the pending
+  scanner/opcode-stringer changes
+- **Detail:** Imports `"go-bytecode-interpter/internals/compiler"` and
+  `"go-bytecode-interpter/internals/memory"` (missing the "e" in
+  "interpreter"), left over from the module rename in commit `344b2b0`
+  (`module go-bytecode-interpreter` in `go.mod`). Breaks `go test ./...`
+  with `package go-bytecode-interpter/internals/compiler is not in std`,
+  failing only `internals/vm`; `go build ./...` and every other package's
+  tests are unaffected. Not part of the current diff (scanner/lexer +
+  compiler opcode-stringer changes) — pure pre-existing breakage.
 
 ### ISSUE-018 — `checkKeyword`/`MatchString` misclassify identifiers as keywords by length alone
 - **Location:** `internals/lexer/scanner.go:240-246` (`checkKeyword`),
@@ -139,6 +141,21 @@ entry, and a regression gets a new ID that references the old one.
   `TestScanToken_SkipWhitespace/spaces` and `/mixed_with_newline`.
 
 ## Fixed
+
+### ISSUE-017 — `Token.String()` passes an `unsafe.Pointer` to `%g`
+- **Location:** `internals/lexer/token.go:84`
+- **Found:** 2026-08-16, `go vet ./...` run while writing the pending
+  scanner-keyword-fix worklog entry
+- **Detail:** `fmt.Sprintf("...start=%g...", ..., t.Start, ...)` passes
+  `t.Start` (`unsafe.Pointer`) to the `%g` (float) verb. `go vet` fails on
+  this, and because `go test` runs vet as part of its build step, this
+  single line blocks every test in `internals/lexer` from running at all
+  (`FAIL go-bytecode-interpreter/internals/lexer [build failed]`) — `go
+  build ./...` itself still succeeds since vet isn't part of a plain build.
+- **Fixed:** 2026-08-16, pending commit (worklog TBD). `%g` changed to
+  `%p` in `internals/lexer/token.go:84`, matching `t.Start`'s
+  `unsafe.Pointer` type; confirmed via `go vet ./internals/lexer/...`
+  producing no output.
 
 ### ISSUE-016 — `checkKeyword`/`identifierType` broken, blocks `go build ./...`
 - **Location:** `internals/lexer/scanner.go:168` (call site),

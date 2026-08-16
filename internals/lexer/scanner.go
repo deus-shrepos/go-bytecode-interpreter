@@ -197,7 +197,7 @@ func (s *Scanner) identifierType() TokenType {
 	case 'c':
 		return s.checkKeyword(1, 4, "lass", CLASS)
 	case 'e':
-		return s.checkKeyword(1, 4, "else", ELSE)
+		return s.checkKeyword(1, 3, "lse", ELSE)
 	case 'f':
 		next := *(*byte)(unsafe.Add(s.start, 1))
 		switch next {
@@ -211,7 +211,7 @@ func (s *Scanner) identifierType() TokenType {
 	case 'i':
 		return s.checkKeyword(1, 1, "f", IF)
 	case 'n':
-		return s.checkKeyword(1, 2, "nil", NIL)
+		return s.checkKeyword(1, 2, "il", NIL)
 	case 'o':
 		return s.checkKeyword(1, 1, "r", OR)
 	case 'p':
@@ -238,8 +238,10 @@ func (s *Scanner) identifierType() TokenType {
 }
 
 func (s *Scanner) checkKeyword(start int, length int, rest string, tokenType TokenType) TokenType {
-	if (calcPtrDiff(s.start, s.current) == (start + length)) ||
-		(MatchString(s.start, rest, length) == 0) {
+	// check the length and match the strings
+	// we move the s.start to the current start position
+	if (calcPtrDiff(s.start, s.current) == (start + length)) &&
+		(MatchString(unsafe.Add(s.start, start), rest, length) == 0) {
 		return tokenType
 	}
 	return IDENTIFIER
@@ -265,7 +267,7 @@ func (s *Scanner) errorToken(message string) Token {
 }
 
 func MatchString(basePtr unsafe.Pointer, rest string, length int) int {
-	return strings.Compare(unsafe.String((*byte)(unsafe.Add(basePtr, 1)), length), rest)
+	return strings.Compare(unsafe.String((*byte)(basePtr), length), rest)
 }
 
 func isAlpha(c byte) bool {

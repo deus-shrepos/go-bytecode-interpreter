@@ -81,6 +81,6 @@ func (t *Token) GetLexme() string {
 }
 
 func (t *Token) String() string {
-	return fmt.Sprintf("Token[type=%v, start=%g, length=%d, line=%d]", t.Type, t.Start, t.Length, t.Line)
+	return fmt.Sprintf("Token[type=%v, start=%p, length=%d, line=%d]", t.Type, t.Start, t.Length, t.Line)
 
 }
