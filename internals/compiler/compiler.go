@@ -3,14 +3,18 @@ package compiler
 import (
 	"fmt"
 	"go-bytecode-interpreter/internals/lexer"
+	"go-bytecode-interpreter/internals/memory"
 )
 
 type Compiler struct {
 	Chunks Chunk
+	arena  *memory.Arena // long-lived objects
 }
 
-func NewCompiler() *Compiler {
-	return &Compiler{}
+func NewCompiler(arena *memory.Arena) *Compiler {
+	return &Compiler{
+		arena: arena,
+	}
 }
 
 func (c *Compiler) Compile(source []byte) {
@@ -23,7 +27,8 @@ func (c *Compiler) Compile(source []byte) {
 		}
 
 		if token.Type == lexer.ERROR {
-			fmt.Printf("Scanner Error: %v", token.GetLexme())
+			fmt.Printf("Scanner Error: %v", token)
 		}
+		fmt.Println(token)
 	}
 }

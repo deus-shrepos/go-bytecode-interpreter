@@ -1,9 +1,11 @@
 package lexer
 
 import (
+	"fmt"
 	"unsafe"
 )
 
+//go:generate stringer -type=TokenType
 type TokenType uint8
 
 const (
@@ -76,4 +78,9 @@ func NewToken(ttype TokenType, start unsafe.Pointer, length int, line int) Token
 
 func (t *Token) GetLexme() string {
 	return unsafe.String((*byte)(t.Start), t.Length)
+}
+
+func (t *Token) String() string {
+	return fmt.Sprintf("Token[type=%v, start=%g, length=%d, line=%d]", t.Type, t.Start, t.Length, t.Line)
+
 }

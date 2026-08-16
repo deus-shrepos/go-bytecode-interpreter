@@ -8,6 +8,37 @@ entry, and a regression gets a new ID that references the old one.
 
 ## Open
 
+### ISSUE-017 — `Token.String()` passes an `unsafe.Pointer` to `%g`
+- **Location:** `internals/lexer/token.go:84`
+- **Found:** 2026-08-16, `go vet ./...` run while writing the pending
+  scanner-keyword-fix worklog entry
+- **Detail:** `fmt.Sprintf("...start=%g...", ..., t.Start, ...)` passes
+  `t.Start` (`unsafe.Pointer`) to the `%g` (float) verb. `go vet` fails on
+  this, and because `go test` runs vet as part of its build step, this
+  single line blocks every test in `internals/lexer` from running at all
+  (`FAIL go-bytecode-interpreter/internals/lexer [build failed]`) — `go
+  build ./...` itself still succeeds since vet isn't part of a plain build.
+
+### ISSUE-018 — `checkKeyword`/`MatchString` misclassify identifiers as keywords by length alone
+- **Location:** `internals/lexer/scanner.go:240-246` (`checkKeyword`),
+  `scanner.go:264-266` (`MatchString`, formerly `memCompare`)
+- **Found:** 2026-08-16, code reading while writing the pending
+  scanner-keyword-fix worklog entry (lexer tests can't run to confirm by
+  test — see ISSUE-017)
+- **Detail:** `MatchString(basePtr, rest, length)` hardcodes
+  `unsafe.Add(basePtr, 1)` as its read start, ignoring the `start` offset
+  `checkKeyword` was given — for any keyword with `start != 1` (e.g. `FALSE`,
+  `FOR`, `FUN`, `THIS`, `TRUE`, all called with `start=2` at
+  `scanner.go:205-209,227,229`) it compares the wrong bytes. Separately,
+  `checkKeyword`'s condition uses `||` between the pointer-length check and
+  the `MatchString(...) == 0` check (`scanner.go:241-242`), where clox's
+  original is effectively `&&` (length matches *and* bytes match) — with
+  `||`, a total-length match alone is enough to return the keyword
+  `TokenType` regardless of the identifier's actual bytes, so e.g. any
+  3-byte identifier starting with `f` (not just `for`) would scan as `FOR`.
+  Supersedes the "unfinished condition" half of ISSUE-016, whose literal
+  `|| (1)` fragment is gone but whose replacement is still wrong.
+
 ### ISSUE-002 — VM dispatch has no case for `OP_CONST_LONG`
 - **Location:** `internals/vm/vm.go`, `Run()` (the `switch c.OpCode(instruction)`)
 - **Found:** 2026-07-25, initial scaffold review
@@ -107,6 +138,8 @@ entry, and a regression gets a new ID that references the old one.
   second space), not two `PLUS` tokens. Confirmed by
   `TestScanToken_SkipWhitespace/spaces` and `/mixed_with_newline`.
 
+## Fixed
+
 ### ISSUE-016 — `checkKeyword`/`identifierType` broken, blocks `go build ./...`
 - **Location:** `internals/lexer/scanner.go:168` (call site),
   `internals/lexer/scanner.go:210-227` (`identifierType`/`checkKeyword`)
@@ -122,8 +155,10 @@ entry, and a regression gets a new ID that references the old one.
   `memCompare()` is already defined in the same file but unused — the fix
   wires it in and compares its result against `0`. `go build ./...` fails
   with all three errors simultaneously.
-
-## Fixed
+- **Fixed:** 2026-08-16, pending worklog entry (uncommitted). The `s.`
+  receiver and the missing `return`s are in place and `go build ./...`
+  succeeds. The replacement condition is still wrong, tracked separately as
+  ISSUE-018.
 
 ### ISSUE-001 — `scanner` declared and not used, blocked `go build ./...`
 - **Location:** `internals/compiler/compiler.go:14` (original)

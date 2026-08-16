@@ -3,6 +3,7 @@ package repl
 import (
 	"fmt"
 	"go-bytecode-interpreter/internals/compiler"
+	"go-bytecode-interpreter/internals/memory"
 	"os"
 )
 
@@ -18,7 +19,8 @@ func (r Repl) LoadProgramFromPath(path string) {
 		fmt.Errorf("cannot open the file: %v", err)
 	}
 
-	compiler := compiler.NewCompiler()
+	arena := memory.NewArena(1 << 16)
+	compiler := compiler.NewCompiler(arena)
 	compiler.Compile(file)
 }
 

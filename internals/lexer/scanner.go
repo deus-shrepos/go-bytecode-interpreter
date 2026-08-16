@@ -165,7 +165,7 @@ func (s *Scanner) makeIdentifier() Token {
 	for isAlpha(s.peek()) || isDigit(s.peek()) {
 		s.advance()
 	}
-	return s.makeToken(identifierType())
+	return s.makeToken(s.identifierType())
 }
 
 func (s *Scanner) peek() byte {
@@ -198,6 +198,16 @@ func (s *Scanner) identifierType() TokenType {
 		return s.checkKeyword(1, 4, "lass", CLASS)
 	case 'e':
 		return s.checkKeyword(1, 4, "else", ELSE)
+	case 'f':
+		next := *(*byte)(unsafe.Add(s.start, 1))
+		switch next {
+		case 'a':
+			return s.checkKeyword(2, 3, "lse", FALSE)
+		case 'u':
+			return s.checkKeyword(2, 1, "n", FUN)
+		case 'o':
+			return s.checkKeyword(2, 1, "r", FOR)
+		}
 	case 'i':
 		return s.checkKeyword(1, 1, "f", IF)
 	case 'n':
@@ -210,6 +220,14 @@ func (s *Scanner) identifierType() TokenType {
 		return s.checkKeyword(1, 5, "eturn", RETURN)
 	case 's':
 		return s.checkKeyword(1, 4, "uper", SUPER)
+	case 't':
+		next := *(*byte)(unsafe.Add(s.start, 1))
+		switch next {
+		case 'h':
+			return s.checkKeyword(2, 2, "is", THIS)
+		case 'r':
+			return s.checkKeyword(2, 2, "ue", TRUE)
+		}
 	case 'v':
 		return s.checkKeyword(1, 2, "ar", VAR)
 	case 'w':
@@ -221,9 +239,10 @@ func (s *Scanner) identifierType() TokenType {
 
 func (s *Scanner) checkKeyword(start int, length int, rest string, tokenType TokenType) TokenType {
 	if (calcPtrDiff(s.start, s.current) == (start + length)) ||
-		(1) {
-
+		(MatchString(s.start, rest, length) == 0) {
+		return tokenType
 	}
+	return IDENTIFIER
 }
 
 func (s *Scanner) isAtEnd() bool {
@@ -245,9 +264,8 @@ func (s *Scanner) errorToken(message string) Token {
 	}
 }
 
-func memCompare(basePtr unsafe.Pointer, rest string, length int) int {
-	strSlice := unsafe.String((*byte)(basePtr), length)
-	return strings.Compare(strSlice, rest)
+func MatchString(basePtr unsafe.Pointer, rest string, length int) int {
+	return strings.Compare(unsafe.String((*byte)(unsafe.Add(basePtr, 1)), length), rest)
 }
 
 func isAlpha(c byte) bool {
