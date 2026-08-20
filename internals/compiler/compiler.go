@@ -27,7 +27,8 @@ func (c *Compiler) Compile(source []byte) {
 		}
 
 		if token.Type == lexer.ERROR {
-			fmt.Printf("Scanner Error: %v", token)
+			fmt.Printf("Scanner Error: %v", token.GetLexme())
+			return
 		}
 		fmt.Println(token)
 	}

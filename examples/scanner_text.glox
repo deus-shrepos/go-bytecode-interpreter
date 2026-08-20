@@ -1,1 +1,1 @@
-for
+f"this {is} a text {and} this {another} text" + "this is a string"

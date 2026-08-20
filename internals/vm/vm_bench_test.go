@@ -1,8 +1,8 @@
 package vm
 
 import (
-	"go-bytecode-interpter/internals/compiler"
-	"go-bytecode-interpter/internals/memory"
+	"go-bytecode-interpreter/internals/compiler"
+	"go-bytecode-interpreter/internals/memory"
 	"testing"
 )
 

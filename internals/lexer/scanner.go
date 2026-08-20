@@ -7,18 +7,20 @@ import (
 )
 
 type Scanner struct {
-	start   unsafe.Pointer
-	current unsafe.Pointer
-	line    int
-	source  []byte // arena?
+	line       int
+	interpMode bool
+	start      unsafe.Pointer
+	current    unsafe.Pointer
+	source     []byte // arena?
 }
 
 func NewScanner(source []byte) *Scanner {
 	return &Scanner{
-		start:   unsafe.Pointer(&source[0]),
-		current: unsafe.Pointer(&source[0]),
-		source:  source,
-		line:    1,
+		start:      unsafe.Pointer(&source[0]),
+		current:    unsafe.Pointer(&source[0]),
+		source:     source,
+		line:       1,
+		interpMode: false,
 	}
 }
 
@@ -32,6 +34,10 @@ func (s *Scanner) ScanToken() Token {
 		return s.makeToken(EOF)
 	}
 	c := s.advance()
+	if c == 'f' && s.peek() == '"' {
+		s.advance()
+		return s.fstringStart()
+	}
 	if isAlpha(c) {
 		return s.makeIdentifier()
 	}
@@ -47,6 +53,19 @@ func (s *Scanner) ScanToken() Token {
 	case '{':
 		return s.makeToken(LEFT_BRACE)
 	case '}':
+		if s.interpMode == true {
+			s.interpMode = false
+			if s.fstringScan() == '"' {
+				s.advance()
+				return s.makeToken(F_STRING_END)
+			}
+			if s.fstringScan() == '{' {
+				s.interpMode = true
+				s.advance()
+				return s.makeToken(F_STRING_MID)
+			}
+
+		}
 		return s.makeToken(RIGHT_BRACE)
 	case ';':
 		return s.makeToken(SEMICOLON)
@@ -143,6 +162,29 @@ func (s *Scanner) string() Token {
 	}
 	s.advance() // need to close the qoute
 	return s.makeToken(STRING)
+}
+
+func (s *Scanner) fstringStart() Token {
+	if s.fstringScan() == '{' {
+		s.interpMode = true
+		s.advance()
+		return s.makeToken(F_STRING_START)
+	}
+
+	// in case we don't find any "{}"
+	// we will just parse it as a string
+	s.advance()
+	return s.makeToken(F_STRING_END)
+}
+
+func (s *Scanner) fstringScan() byte {
+	for (s.peek() != '"' && s.peek() != '{') && !s.isAtEnd() {
+		if s.peek() == '\n' {
+			s.line++
+		}
+		s.advance()
+	}
+	return s.peek()
 }
 
 func (s *Scanner) makeNumber() Token {

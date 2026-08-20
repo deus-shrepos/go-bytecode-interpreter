@@ -8,19 +8,6 @@ entry, and a regression gets a new ID that references the old one.
 
 ## Open
 
-### ISSUE-019 — `vm_bench_test.go` imports the pre-rename module path
-- **Location:** `internals/vm/vm_bench_test.go:4-5`
-- **Found:** 2026-08-16, `go test ./...` run before committing the pending
-  scanner/opcode-stringer changes
-- **Detail:** Imports `"go-bytecode-interpter/internals/compiler"` and
-  `"go-bytecode-interpter/internals/memory"` (missing the "e" in
-  "interpreter"), left over from the module rename in commit `344b2b0`
-  (`module go-bytecode-interpreter` in `go.mod`). Breaks `go test ./...`
-  with `package go-bytecode-interpter/internals/compiler is not in std`,
-  failing only `internals/vm`; `go build ./...` and every other package's
-  tests are unaffected. Not part of the current diff (scanner/lexer +
-  compiler opcode-stringer changes) — pure pre-existing breakage.
-
 ### ISSUE-018 — `checkKeyword`/`MatchString` misclassify identifiers as keywords by length alone
 - **Location:** `internals/lexer/scanner.go:240-246` (`checkKeyword`),
   `scanner.go:264-266` (`MatchString`, formerly `memCompare`)
@@ -141,6 +128,48 @@ entry, and a regression gets a new ID that references the old one.
   `TestScanToken_SkipWhitespace/spaces` and `/mixed_with_newline`.
 
 ## Fixed
+
+### ISSUE-020 — `skipWhiteSpace` comment case no longer skips the trailing newline
+- **Location:** `internals/lexer/scanner.go`, `skipWhiteSpace()` `case '/':`
+  (~line 136-146 in the current working tree)
+- **Found:** 2026-08-20, `TestScanToken_SkipComment` (pre-existing test)
+  failing after running the full `internals/lexer` suite while adding new
+  f-string scanner tests (`TestScanToken_FString_*`, which pass)
+- **Detail:** The uncommitted working-tree diff (rider fix alongside the
+  f-string scanner feature) moved `return` from inside the `case '/':`
+  `else` branch to unconditionally after the whole `if/else`. For a real
+  `//` comment, the inner loop stops at the trailing `'\n'` (not consumed
+  by the loop, which checks `peek() != '\n'`); previously `return` fired
+  only on the non-comment (`else`) branch, so the comment path fell through
+  to `skipWhiteSpace`'s enclosing `for {}` and looped back to consume the
+  `'\n'` via `case '\n':`. Now `return` fires immediately after the comment
+  loop, leaving `'\n'` unconsumed. Back in `ScanToken()`, the bare `'\n'`
+  matches no `switch` case (only `skipWhiteSpace` handles `'\n'`) and falls
+  to `default: errorToken(...)`, producing an `ERROR` token instead of
+  resuming normal scanning.
+- **Fixed:** 2026-08-20, current working-tree diff. `case '/':`'s `else`
+  branch now `return`s directly (not after the whole `if/else`), so the
+  comment loop falls through to the enclosing `for` and `case '\n':`
+  consumes the trailing newline on the next iteration. Verified:
+  `go test ./internals/lexer/... -run TestScanToken_SkipComment` passes.
+
+### ISSUE-019 — `vm_bench_test.go` imports the pre-rename module path
+- **Location:** `internals/vm/vm_bench_test.go:4-5`
+- **Found:** 2026-08-16, `go test ./...` run before committing the pending
+  scanner/opcode-stringer changes
+- **Detail:** Imports `"go-bytecode-interpter/internals/compiler"` and
+  `"go-bytecode-interpter/internals/memory"` (missing the "e" in
+  "interpreter"), left over from the module rename in commit `344b2b0`
+  (`module go-bytecode-interpreter` in `go.mod`). Breaks `go test ./...`
+  with `package go-bytecode-interpter/internals/compiler is not in std`,
+  failing only `internals/vm`; `go build ./...` and every other package's
+  tests are unaffected. Not part of the current diff (scanner/lexer +
+  compiler opcode-stringer changes) — pure pre-existing breakage.
+- **Fixed:** 2026-08-20, current working-tree diff. Both imports now read
+  `go-bytecode-interpreter/...`. Verified: `go build ./...` no longer
+  reports the missing-package error for this file (the package still fails
+  separately on ISSUE-009, an unrelated call-signature bug in the same
+  file).
 
 ### ISSUE-017 — `Token.String()` passes an `unsafe.Pointer` to `%g`
 - **Location:** `internals/lexer/token.go:84`

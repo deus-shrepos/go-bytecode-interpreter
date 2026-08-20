@@ -56,6 +56,11 @@ const (
 	VAR
 	WHILE
 
+	// F-string
+	F_STRING_START
+	F_STRING_MID
+	F_STRING_END
+
 	ERROR
 	EOF
 )

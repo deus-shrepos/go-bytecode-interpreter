@@ -503,3 +503,191 @@ func TestScanToken_LineTracking(t *testing.T) {
 		t.Errorf("errorToken Line = %d, want 3", errTok.Line)
 	}
 }
+
+// fstringSeq is one expected (Type, lexeme) pair in an f-string token
+// sequence. lexeme is asserted via Token.GetLexme() (the same accessor
+// compiler.go uses to print scan errors) rather than manual length/byte
+// counting, since f-string lexemes have irregular boundaries (they include
+// the '}'/'"' that closes the *previous* segment).
+type fstringSeq struct {
+	typ    lexer.TokenType
+	lexeme string
+}
+
+func assertFStringSequence(t *testing.T, source string, want []fstringSeq) {
+	t.Helper()
+	s := lexer.NewScanner([]byte(source + "\x00"))
+	for i, w := range want {
+		tok := s.ScanToken()
+		if tok.Type != w.typ {
+			t.Fatalf("token %d: Type = %v, want %v", i, tok.Type, w.typ)
+		}
+		if got := tok.GetLexme(); got != w.lexeme {
+			t.Fatalf("token %d: lexeme = %q, want %q", i, got, w.lexeme)
+		}
+	}
+	if tok := s.ScanToken(); tok.Type != lexer.EOF {
+		t.Errorf("final token Type = %v, want EOF", tok.Type)
+	}
+}
+
+// TestScanToken_FString_NoInterpolation asserts an f-string with no "{"
+// short-circuits straight to F_STRING_END (fstringStart, scanner.go:167-178)
+// — no F_STRING_START is emitted for a plain f-string.
+func TestScanToken_FString_NoInterpolation(t *testing.T) {
+	assertFStringSequence(t, `f"hello"`, []fstringSeq{
+		{lexer.F_STRING_END, `f"hello"`},
+	})
+}
+
+// TestScanToken_FString_SingleInterpolation covers the three-token scheme:
+// F_STRING_START carries the literal prefix through the opening "{", the
+// embedded expression is scanned as ordinary tokens (just IDENTIFIER here),
+// and F_STRING_END carries the closing "}" through the closing quote.
+func TestScanToken_FString_SingleInterpolation(t *testing.T) {
+	assertFStringSequence(t, `f"a {b} c"`, []fstringSeq{
+		{lexer.F_STRING_START, `f"a {`},
+		{lexer.IDENTIFIER, `b`},
+		{lexer.F_STRING_END, `} c"`},
+	})
+}
+
+// TestScanToken_FString_MultipleInterpolations mirrors the shape of
+// examples/scanner_text.glox: repeated interpolations produce F_STRING_MID
+// segments between F_STRING_START and F_STRING_END, each spanning from the
+// closing "}" of one interpolation to the opening "{" of the next.
+func TestScanToken_FString_MultipleInterpolations(t *testing.T) {
+	assertFStringSequence(t, `f"this {foo} text {bar} more {baz} end"`, []fstringSeq{
+		{lexer.F_STRING_START, `f"this {`},
+		{lexer.IDENTIFIER, `foo`},
+		{lexer.F_STRING_MID, `} text {`},
+		{lexer.IDENTIFIER, `bar`},
+		{lexer.F_STRING_MID, `} more {`},
+		{lexer.IDENTIFIER, `baz`},
+		{lexer.F_STRING_END, `} end"`},
+	})
+}
+
+// TestScanToken_FString_EmptyInterpolation asserts "{}" with nothing inside
+// produces F_STRING_START immediately followed by F_STRING_END — no
+// IDENTIFIER/RIGHT_BRACE token represents the empty gap. This also confirms
+// the interpMode-gated '}' branch (scanner.go:55-69) doesn't misfire into
+// plain RIGHT_BRACE handling when the brace immediately follows another
+// brace.
+func TestScanToken_FString_EmptyInterpolation(t *testing.T) {
+	assertFStringSequence(t, `f"{}"`, []fstringSeq{
+		{lexer.F_STRING_START, `f"{`},
+		{lexer.F_STRING_END, `}"`},
+	})
+}
+
+// TestScanToken_FString_Multiline asserts s.line (incremented inside
+// fstringScan, scanner.go:180-188) advances correctly across newlines in
+// both the literal-prefix scan (inside fstringStart) and the literal-suffix
+// scan (inside the '}' case). Per the Line-timing convention established by
+// TestScanToken_String_MultilineTerminated, each token's Line reflects the
+// line *after* its full lexeme (including any newlines inside it) has been
+// consumed.
+func TestScanToken_FString_Multiline(t *testing.T) {
+	source := "f\"a\nb {x} c\nd\"\x00"
+	s := lexer.NewScanner([]byte(source))
+
+	startTok := s.ScanToken()
+	if startTok.Type != lexer.F_STRING_START {
+		t.Fatalf("Type = %v, want F_STRING_START", startTok.Type)
+	}
+	if startTok.Line != 2 {
+		t.Errorf("F_STRING_START Line = %d, want 2", startTok.Line)
+	}
+
+	idTok := s.ScanToken()
+	if idTok.Type != lexer.IDENTIFIER {
+		t.Fatalf("Type = %v, want IDENTIFIER", idTok.Type)
+	}
+	if idTok.Line != 2 {
+		t.Errorf("IDENTIFIER Line = %d, want 2", idTok.Line)
+	}
+
+	endTok := s.ScanToken()
+	if endTok.Type != lexer.F_STRING_END {
+		t.Fatalf("Type = %v, want F_STRING_END", endTok.Type)
+	}
+	if endTok.Line != 3 {
+		t.Errorf("F_STRING_END Line = %d, want 3", endTok.Line)
+	}
+}
+
+// TestScanToken_FString_AdjacentFIdentifier pins the exact adjacency
+// requirement of the `c == 'f' && s.peek() == '"'` f-string check
+// (scanner.go:37-40): only a '"' immediately following 'f' (no whitespace)
+// triggers f-string scanning. `f + "str"` must scan as the identifier `f`,
+// not misfire into fstringStart.
+func TestScanToken_FString_AdjacentFIdentifier(t *testing.T) {
+	source := []byte(`f + "str"` + "\x00")
+	s := lexer.NewScanner(source)
+
+	idTok := s.ScanToken()
+	if idTok.Type != lexer.IDENTIFIER || idTok.GetLexme() != "f" {
+		t.Fatalf("token 0 = (%v, %q), want (IDENTIFIER, \"f\")", idTok.Type, idTok.GetLexme())
+	}
+	plusTok := s.ScanToken()
+	if plusTok.Type != lexer.PLUS {
+		t.Fatalf("token 1: Type = %v, want PLUS", plusTok.Type)
+	}
+	strTok := s.ScanToken()
+	if strTok.Type != lexer.STRING || strTok.GetLexme() != `"str"` {
+		t.Fatalf("token 2 = (%v, %q), want (STRING, %q)", strTok.Type, strTok.GetLexme(), `"str"`)
+	}
+}
+
+// TestScanToken_FString_UnterminatedMidInterpolation documents that an
+// f-string left open inside an interpolation (no closing '}') does NOT
+// produce an ERROR token the way an unterminated plain string does
+// (TestScanToken_String_Unterminated) — it just scans the embedded
+// expression's tokens and then hits EOF normally on the next ScanToken()
+// call, silently leaving interpMode stuck at true. Uses
+// scanTokenWithTimeout defensively; this path is expected to terminate,
+// but an unverified interpMode state is exactly the kind of thing that
+// could hang a future change to the '}' handling.
+func TestScanToken_FString_UnterminatedMidInterpolation(t *testing.T) {
+	s := lexer.NewScanner([]byte(`f"abc {expr` + "\x00"))
+
+	startTok := scanTokenWithTimeout(t, s)
+	if startTok.Type != lexer.F_STRING_START {
+		t.Fatalf("Type = %v, want F_STRING_START", startTok.Type)
+	}
+	idTok := scanTokenWithTimeout(t, s)
+	if idTok.Type != lexer.IDENTIFIER || idTok.GetLexme() != "expr" {
+		t.Fatalf("token = (%v, %q), want (IDENTIFIER, \"expr\")", idTok.Type, idTok.GetLexme())
+	}
+	eofTok := scanTokenWithTimeout(t, s)
+	if eofTok.Type != lexer.EOF {
+		t.Errorf("Type = %v, want EOF (no ERROR token for an f-string left open mid-interpolation)", eofTok.Type)
+	}
+}
+
+// TestScanToken_FString_UnterminatedNoClose documents a scanner-cursor bug:
+// an f-string with no '{' AND no closing '"' (EOF reached inside
+// fstringScan, scanner.go:180-188) falls into fstringStart's "no {}"
+// branch (scanner.go:174-177), which unconditionally calls advance() —
+// even though fstringScan stopped on isAtEnd(), not on a real '"'. That
+// advance() walks s.current one byte past the source's 0x00 sentinel, and
+// the returned token is wrongly typed F_STRING_END (never ERROR) with a
+// lexeme that swallows the sentinel byte. Filed as an open issue via
+// /issue rather than fixed here — this test exists to pin the current
+// (buggy) behavior, not to endorse it.
+//
+// Only ONE ScanToken() call is made on this scanner: GetLexme() here is
+// safe (its byte range ends exactly at the sentinel, still in bounds), but
+// a second ScanToken() call would peek() at the now out-of-bounds cursor —
+// do not extend this test to call ScanToken() again.
+func TestScanToken_FString_UnterminatedNoClose(t *testing.T) {
+	tok := scanTokenWithTimeout(t, lexer.NewScanner([]byte(`f"abc` + "\x00")))
+
+	if tok.Type != lexer.F_STRING_END {
+		t.Fatalf("Type = %v, want F_STRING_END (current, buggy behavior — see ISSUES.md)", tok.Type)
+	}
+	if got := tok.GetLexme(); got != "f\"abc\x00" {
+		t.Errorf("lexeme = %q, want \"f\\\"abc\\x00\" (lexeme wrongly includes the sentinel byte)", got)
+	}
+}
