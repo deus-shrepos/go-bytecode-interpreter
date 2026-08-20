@@ -2,7 +2,7 @@
 date: 2026-08-20
 phase: lexer
 files: [internals/lexer/scanner.go, internals/lexer/token.go, internals/lexer/tokentype_string.go, internals/lexer/scanner_test.go, internals/compiler/compiler.go, examples/scanner_text.glox, Makefile, .claude/ISSUES.md]
-commit: pending
+commit: 12540a9
 ---
 
 # Add f-string interpolation scanning
