@@ -2,7 +2,7 @@
 date: 2026-08-21
 phase: compiler
 files: [internals/compiler/compiler.go, internals/errors/errors.go, internals/lexer/scanner.go, internals/vm/vm.go, examples/scanner_text.glox]
-commit: pending
+commit: 1b0f0bc
 ---
 
 # Wire Compiler/VM for Pratt-parser expression compilation, clox-style errors
