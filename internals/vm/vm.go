@@ -23,13 +23,15 @@ type VM struct {
 	Chunk *c.Chunk
 	Stack []Value
 	trace bool
+
+	arena *memory.Arena
 }
 
-func NewVM(arena *memory.Arena, chunk *c.Chunk, trace bool) *VM {
+func NewVM(arena *memory.Arena, trace bool) *VM {
 	return &VM{
-		Chunk: chunk,
 		Stack: memory.AllocSliceCap[Value](arena, 0, 256),
 		trace: trace,
+		arena: arena,
 	}
 
 }
@@ -71,9 +73,22 @@ func (vm *VM) Run() InterpretResult {
 	}
 }
 
-func (vm *VM) Interpret(source string) {
+func (vm *VM) Interpret(source []byte) InterpretResult {
+
+	chunk := c.NewChunk(vm.arena)
+	compiler := c.NewCompiler(vm.arena, &chunk)
+
+	// compile the source and emit bytecode
+	// and store that in the chunk
+	if !compiler.Compile(source) {
+		vm.arena.Free()
+		return InterpretCompilerError
+	}
+	vm.Chunk = &chunk
 	vm.ip = (*uint8)(unsafe.Pointer(&vm.Chunk.Code[0]))
-	vm.Run()
+	result := vm.Run()
+	vm.arena.Free()
+	return result
 }
 
 func (vm *VM) readByte() uint8 {

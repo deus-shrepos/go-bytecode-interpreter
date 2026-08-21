@@ -64,7 +64,6 @@ func (s *Scanner) ScanToken() Token {
 				s.advance()
 				return s.makeToken(F_STRING_MID)
 			}
-
 		}
 		return s.makeToken(RIGHT_BRACE)
 	case ';':
@@ -113,6 +112,7 @@ func (s *Scanner) ScanToken() Token {
 		return s.errorToken(fmt.Sprintf("Unexpected Token: %q (%d)", c, c))
 	}
 }
+
 func (s *Scanner) makeToken(ttype TokenType) Token {
 	return Token{
 		Type:   ttype,
