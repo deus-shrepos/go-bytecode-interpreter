@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"go-bytecode-interpreter/internals/lexer"
+	"os"
 	"strings"
 )
 
@@ -28,21 +29,20 @@ func NewError(token lexer.Token, phase error, msg string) Error {
 
 func (e *Error) Error() string {
 	errorString := strings.Builder{}
-	errorString.WriteString(fmt.Sprintf("[line %d] %s", e.token.Line, e.Phase))
-	if e.token.Type == lexer.EOF {
-		errorString.WriteString(" at end")
-	} else if e.token.Type == lexer.ERROR {
-
-	} else {
-		errorString.WriteString(fmt.Sprintf(" at '%.*s'", e.token.Length, &e.token.Start))
+	fmt.Fprintf(&errorString, "[line %d] %s", e.token.Line, e.Phase)
+	switch e.token.Type {
+	case lexer.EOF:
+		fmt.Fprintf(&errorString, " at end")
+	case lexer.ERROR:
+		break
+	default:
+		fmt.Fprintf(&errorString, " at '%s'", e.token.Lexeme())
 	}
+
+	fmt.Fprintf(os.Stderr, ": %s\n", e.Message)
 	return fmt.Sprintf(errorString.String())
 }
 
-func (e *Error) unwrap() error {
+func (e *Error) Unwrap() error {
 	return e.Phase
-}
-
-func (e *Error) errorAt() {
-
 }

@@ -8,6 +8,35 @@ entry, and a regression gets a new ID that references the old one.
 
 ## Open
 
+### ISSUE-022 — `scanner_test.go` still calls the renamed `GetLexme`
+- **Location:** `internals/lexer/scanner_test.go:119,525,630,631,638,639,660,661,690`
+- **Found:** 2026-08-22, `/worklog` evidence-gathering (`go vet ./...`) for
+  the pending panic-mode-error-recovery commit
+- **Detail:** `internals/lexer/token.go`'s `Token.GetLexme` was renamed to
+  `Token.Lexeme` in the current diff, but the 9 call sites above weren't
+  updated (test file, not part of the diff). Fails `go vet`/`go test` for
+  the whole `internals/lexer` package.
+
+### ISSUE-021 — `errors.Error` passed by value where `Error()` needs a pointer
+- **Location:** `internals/compiler/compiler.go:76` (call site),
+  `internals/errors/errors.go:21-28` (`NewError`, returns `Error` not
+  `*Error`), `errors.go:30` (`Error()` has a pointer receiver)
+- **Found:** 2026-08-22, `/worklog` evidence-gathering (`go vet ./...`) for
+  the pending panic-mode-error-recovery commit — first time this gets a
+  tracked id; the 2026-08-21 worklog entry's "Stuck points" described the
+  same defect in prose only.
+- **Detail:** `errors.NewError(...)` returns an `Error` value.
+  `(e *Error) Error() string` has a pointer receiver, so a bare `Error`
+  value's method set does not include `Error()` — it does not satisfy the
+  `error`/`fmt.Stringer` interfaces. `compiler.go:76`'s
+  `fmt.Fprintf(os.Stderr, "%s", errors.NewError(...))` therefore never
+  invokes `Error()`; `%s` falls back to Go's default struct formatting.
+  `go vet` flags this directly: `fmt.Fprintf format %s has arg
+  errors.NewError(...) of wrong type go-bytecode-interpreter/internals/errors.Error`.
+  Separately, `errors.go:43`'s `fmt.Sprintf(errorString.String())` — found
+  in the same file during the same vet run — is a non-constant format
+  string (should just be `errorString.String()`, no `Sprintf`).
+
 ### ISSUE-018 — `checkKeyword`/`MatchString` misclassify identifiers as keywords by length alone
 - **Location:** `internals/lexer/scanner.go:240-246` (`checkKeyword`),
   `scanner.go:264-266` (`MatchString`, formerly `memCompare`)

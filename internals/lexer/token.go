@@ -81,7 +81,7 @@ func NewToken(ttype TokenType, start unsafe.Pointer, length int, line int) Token
 	}
 }
 
-func (t *Token) GetLexme() string {
+func (t *Token) Lexeme() string {
 	return unsafe.String((*byte)(t.Start), t.Length)
 }
 

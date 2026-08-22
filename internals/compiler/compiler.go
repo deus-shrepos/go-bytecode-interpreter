@@ -9,18 +9,21 @@ import (
 )
 
 type Compiler struct {
-	current  lexer.Token
-	previous lexer.Token
-	scanner  lexer.Scanner
-	chunk    *Chunk
-	arena    *memory.Arena // long-lived objects
+	current   lexer.Token
+	previous  lexer.Token
+	scanner   lexer.Scanner
+	hadError  bool
+	panicMode bool
+	chunk     *Chunk
+	arena     *memory.Arena // long-lived objects
 }
 
 func NewCompiler(arena *memory.Arena, chunk *Chunk, source []byte) *Compiler {
 	return &Compiler{
-		arena:   arena,
-		chunk:   chunk,
-		scanner: *lexer.NewScanner(source),
+		arena:    arena,
+		chunk:    chunk,
+		scanner:  *lexer.NewScanner(source),
+		hadError: false,
 	}
 }
 
@@ -28,7 +31,7 @@ func (c *Compiler) Compile() bool {
 	c.advance()
 	c.expression()
 	c.consume(lexer.EOF, "Expect end of expression.")
-	return false
+	return !c.hadError
 }
 
 func (c *Compiler) advance() {
@@ -39,8 +42,13 @@ func (c *Compiler) advance() {
 			break // move the scanner
 		}
 
-		err := errors.NewError(c.current, errors.CompilePhaseError, c.current.GetLexme())
-		fmt.Fprintf(os.Stderr, "%s", err)
+		// if in panic mode, compile as normal
+		// i.e resynchronise
+		if c.panicMode {
+			return
+		}
+
+		c.reportError(c.current.Lexeme())
 	}
 }
 
@@ -49,5 +57,24 @@ func (c *Compiler) expression() {
 }
 
 func (c *Compiler) consume(tokeType lexer.TokenType, message string) {
+	if c.current.Type == tokeType {
+		c.advance()
+		return
+	}
+	c.reportError(message)
+}
 
+func (c *Compiler) EmitByteCode(byteCode byte) {
+
+}
+
+func (c *Compiler) reportError(message string) {
+	c.panicMode = true
+
+	fmt.Fprintf(
+		os.Stderr,
+		"%s",
+		errors.NewError(c.current, errors.CompilePhaseError, message),
+	)
+	c.hadError = true
 }
