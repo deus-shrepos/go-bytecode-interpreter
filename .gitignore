@@ -1,2 +1,4 @@
 /glox
 *.exe
+*.test
+/.pprof/
