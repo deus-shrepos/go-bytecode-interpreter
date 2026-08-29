@@ -2,7 +2,7 @@
 date: 2026-08-29
 phase: compiler
 files: [internals/compiler/compiler.go, internals/compiler/precedence.go]
-commit: pending
+commit: e140653
 ---
 
 # Wire up Pratt-parser precedence climbing and fix constant-emission double-write
