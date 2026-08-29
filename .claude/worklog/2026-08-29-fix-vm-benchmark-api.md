@@ -2,7 +2,7 @@
 date: 2026-08-29
 phase: vm
 files: [internals/vm/vm_bench_test.go]
-commit: pending
+commit: 162150c
 ---
 
 # Fix BenchmarkVM to match current NewVM/Interpret signatures

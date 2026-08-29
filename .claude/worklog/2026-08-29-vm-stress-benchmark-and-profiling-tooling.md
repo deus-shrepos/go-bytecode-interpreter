@@ -2,7 +2,7 @@
 date: 2026-08-29
 phase: vm
 files: [internals/vm/vm_bench_test.go, Makefile, .gitignore]
-commit: pending
+commit: 382d157
 ---
 
 # Add a VM stress benchmark and reusable heap-profiling Makefile targets
