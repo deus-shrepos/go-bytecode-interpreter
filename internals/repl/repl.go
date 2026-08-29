@@ -20,7 +20,7 @@ func (r Repl) LoadProgramFromPath(path string) {
 	}
 
 	arena := memory.NewArena(1 << 16)
-	vm := vm.NewVM(arena, false)
+	vm := vm.NewVM(arena, true)
 	vm.Interpret(file) // VM dispatch
 }
 

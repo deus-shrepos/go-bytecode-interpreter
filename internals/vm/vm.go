@@ -3,14 +3,11 @@ package vm
 import (
 	"fmt"
 	c "go-bytecode-interpreter/internals/compiler"
-	"go-bytecode-interpreter/internals/debug"
 	"go-bytecode-interpreter/internals/memory"
-	"go-bytecode-interpreter/internals/value"
 	"unsafe"
 )
 
 type InterpretResult uint8
-type Value = value.Value
 
 const (
 	InterpretOk = iota
@@ -46,7 +43,7 @@ func (vm *VM) Run() InterpretResult {
 				fmt.Printf(" ]")
 			}
 			fmt.Println()
-			debug.DisassembleInstruction(*vm.Chunk, vm.offset())
+			c.DisassembleInstruction(*vm.Chunk, vm.offset())
 		}
 		instruction := vm.readByte()
 		switch c.OpCode(instruction) {
