@@ -5,7 +5,7 @@ files: [internals/compiler/compiler.go, internals/compiler/precedence.go,
   internals/compiler/chunks.go, internals/vm/vm.go, internals/vm/operations.go,
   internals/repl/repl.go, internals/lexer/scanner_test.go,
   examples/scanner_text.glox, .claude/ISSUES.md, pratt-parser.md, .gitignore]
-commit: pending
+commit: 62ebdbe
 ---
 
 # WIP: Pratt-parser scaffolding for expression compilation (build broken)
