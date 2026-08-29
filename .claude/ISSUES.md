@@ -8,14 +8,43 @@ entry, and a regression gets a new ID that references the old one.
 
 ## Open
 
-### ISSUE-022 — `scanner_test.go` still calls the renamed `GetLexme`
-- **Location:** `internals/lexer/scanner_test.go:119,525,630,631,638,639,660,661,690`
-- **Found:** 2026-08-22, `/worklog` evidence-gathering (`go vet ./...`) for
-  the pending panic-mode-error-recovery commit
-- **Detail:** `internals/lexer/token.go`'s `Token.GetLexme` was renamed to
-  `Token.Lexeme` in the current diff, but the 9 call sites above weren't
-  updated (test file, not part of the diff). Fails `go vet`/`go test` for
-  the whole `internals/lexer` package.
+### ISSUE-023 — `precedence.go` imports a staticcheck-internal package, blocks `go build ./...`
+- **Location:** `internals/compiler/precedence.go:6`
+- **Found:** 2026-08-29, reviewing the working tree before committing a WIP
+  Pratt-parser snapshot
+- **Detail:** Imports `honnef.co/go/tools/analysis/facts/tokenfile` —
+  a `staticcheck` internal analysis package, not an application dependency
+  and not in `go.mod`. `go build ./...` fails immediately: `no required
+  module provides package honnef.co/go/tools/analysis/facts/tokenfile`.
+  Likely an IDE autocomplete mistake for something like `lexer.Token`.
+
+### ISSUE-024 — `precedence.go`'s `rules` table references undefined `PREC_NONE` and a bad `ParseFunc` value
+- **Location:** `internals/compiler/precedence.go:34`
+- **Detail:** `ParseRule{grouping, nil, PREC_NONE}` uses `PREC_NONE`, which
+  is undefined — the constant this same file declares is `PrecNone`
+  (line 12). Separately, `grouping` is passed where `ParseFunc` (`*func()`)
+  is expected, but `grouping` is `(c *Compiler) grouping()`, a bound method
+  value of type `func()`, not `*func()` — doesn't satisfy the field type.
+- **Found:** 2026-08-29, reviewing the working tree before committing a WIP
+  Pratt-parser snapshot
+
+### ISSUE-025 — `Binary()` has a syntax error and two undefined references
+- **Location:** `internals/compiler/compiler.go`, `Binary()`
+- **Found:** 2026-08-29, reviewing the working tree before committing a WIP
+  Pratt-parser snapshot
+- **Detail:** `c.parsePrecedence(Precedence(rule.precedence + 1)))` has an
+  extra trailing `)` — a syntax error. `rule.precedence` also doesn't exist;
+  `ParseRule` (precedence.go) only defines a `prec` field. `getRule(operatorType)`
+  is called but never defined anywhere in the current diff.
+
+### ISSUE-026 — `compiler.go` imports `text/template/parse`, apparently unused
+- **Location:** `internals/compiler/compiler.go` (import block)
+- **Found:** 2026-08-29, reviewing the working tree before committing a WIP
+  Pratt-parser snapshot
+- **Detail:** `text/template/parse` is imported but nothing in the diff
+  references the `parse` package — likely a stray/accidental import that
+  will fail `go build` as unused once ISSUE-023 is fixed enough to compile
+  past the precedence.go error.
 
 ### ISSUE-021 — `errors.Error` passed by value where `Error()` needs a pointer
 - **Location:** `internals/compiler/compiler.go:76` (call site),
@@ -157,6 +186,18 @@ entry, and a regression gets a new ID that references the old one.
   `TestScanToken_SkipWhitespace/spaces` and `/mixed_with_newline`.
 
 ## Fixed
+
+### ISSUE-022 — `scanner_test.go` still calls the renamed `GetLexme`
+- **Location:** `internals/lexer/scanner_test.go:119,525,630,631,638,639,660,661,690`
+- **Found:** 2026-08-22, `/worklog` evidence-gathering (`go vet ./...`) for
+  the pending panic-mode-error-recovery commit
+- **Detail:** `internals/lexer/token.go`'s `Token.GetLexme` was renamed to
+  `Token.Lexeme` in the current diff, but the 9 call sites above weren't
+  updated (test file, not part of the diff). Fails `go vet`/`go test` for
+  the whole `internals/lexer` package.
+- **Fixed:** 2026-08-24, `2026-08-24-fix-post-panic-mode-build-breakage`
+  worklog entry (pending commit). All 9 call sites renamed to `Lexeme`;
+  `go test ./internals/lexer/...` passes.
 
 ### ISSUE-020 — `skipWhiteSpace` comment case no longer skips the trailing newline
 - **Location:** `internals/lexer/scanner.go`, `skipWhiteSpace()` `case '/':`

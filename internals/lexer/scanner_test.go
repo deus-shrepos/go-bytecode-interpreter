@@ -116,8 +116,8 @@ func TestScanToken_Identifier(t *testing.T) {
 			if tok.Length != tc.wantLength {
 				t.Errorf("Length = %d, want %d", tok.Length, tc.wantLength)
 			}
-			if got := tok.GetLexme(); got != tc.source {
-				t.Errorf("GetLexme() = %q, want %q", got, tc.source)
+			if got := tok.Lexeme(); got != tc.source {
+				t.Errorf("Lexeme() = %q, want %q", got, tc.source)
 			}
 		})
 	}
@@ -505,7 +505,7 @@ func TestScanToken_LineTracking(t *testing.T) {
 }
 
 // fstringSeq is one expected (Type, lexeme) pair in an f-string token
-// sequence. lexeme is asserted via Token.GetLexme() (the same accessor
+// sequence. lexeme is asserted via Token.Lexeme() (the same accessor
 // compiler.go uses to print scan errors) rather than manual length/byte
 // counting, since f-string lexemes have irregular boundaries (they include
 // the '}'/'"' that closes the *previous* segment).
@@ -522,7 +522,7 @@ func assertFStringSequence(t *testing.T, source string, want []fstringSeq) {
 		if tok.Type != w.typ {
 			t.Fatalf("token %d: Type = %v, want %v", i, tok.Type, w.typ)
 		}
-		if got := tok.GetLexme(); got != w.lexeme {
+		if got := tok.Lexeme(); got != w.lexeme {
 			t.Fatalf("token %d: lexeme = %q, want %q", i, got, w.lexeme)
 		}
 	}
@@ -627,16 +627,16 @@ func TestScanToken_FString_AdjacentFIdentifier(t *testing.T) {
 	s := lexer.NewScanner(source)
 
 	idTok := s.ScanToken()
-	if idTok.Type != lexer.IDENTIFIER || idTok.GetLexme() != "f" {
-		t.Fatalf("token 0 = (%v, %q), want (IDENTIFIER, \"f\")", idTok.Type, idTok.GetLexme())
+	if idTok.Type != lexer.IDENTIFIER || idTok.Lexeme() != "f" {
+		t.Fatalf("token 0 = (%v, %q), want (IDENTIFIER, \"f\")", idTok.Type, idTok.Lexeme())
 	}
 	plusTok := s.ScanToken()
 	if plusTok.Type != lexer.PLUS {
 		t.Fatalf("token 1: Type = %v, want PLUS", plusTok.Type)
 	}
 	strTok := s.ScanToken()
-	if strTok.Type != lexer.STRING || strTok.GetLexme() != `"str"` {
-		t.Fatalf("token 2 = (%v, %q), want (STRING, %q)", strTok.Type, strTok.GetLexme(), `"str"`)
+	if strTok.Type != lexer.STRING || strTok.Lexeme() != `"str"` {
+		t.Fatalf("token 2 = (%v, %q), want (STRING, %q)", strTok.Type, strTok.Lexeme(), `"str"`)
 	}
 }
 
@@ -657,8 +657,8 @@ func TestScanToken_FString_UnterminatedMidInterpolation(t *testing.T) {
 		t.Fatalf("Type = %v, want F_STRING_START", startTok.Type)
 	}
 	idTok := scanTokenWithTimeout(t, s)
-	if idTok.Type != lexer.IDENTIFIER || idTok.GetLexme() != "expr" {
-		t.Fatalf("token = (%v, %q), want (IDENTIFIER, \"expr\")", idTok.Type, idTok.GetLexme())
+	if idTok.Type != lexer.IDENTIFIER || idTok.Lexeme() != "expr" {
+		t.Fatalf("token = (%v, %q), want (IDENTIFIER, \"expr\")", idTok.Type, idTok.Lexeme())
 	}
 	eofTok := scanTokenWithTimeout(t, s)
 	if eofTok.Type != lexer.EOF {
@@ -677,17 +677,17 @@ func TestScanToken_FString_UnterminatedMidInterpolation(t *testing.T) {
 // /issue rather than fixed here — this test exists to pin the current
 // (buggy) behavior, not to endorse it.
 //
-// Only ONE ScanToken() call is made on this scanner: GetLexme() here is
+// Only ONE ScanToken() call is made on this scanner: Lexeme() here is
 // safe (its byte range ends exactly at the sentinel, still in bounds), but
 // a second ScanToken() call would peek() at the now out-of-bounds cursor —
 // do not extend this test to call ScanToken() again.
 func TestScanToken_FString_UnterminatedNoClose(t *testing.T) {
-	tok := scanTokenWithTimeout(t, lexer.NewScanner([]byte(`f"abc` + "\x00")))
+	tok := scanTokenWithTimeout(t, lexer.NewScanner([]byte(`f"abc`+"\x00")))
 
 	if tok.Type != lexer.F_STRING_END {
 		t.Fatalf("Type = %v, want F_STRING_END (current, buggy behavior — see ISSUES.md)", tok.Type)
 	}
-	if got := tok.GetLexme(); got != "f\"abc\x00" {
+	if got := tok.Lexeme(); got != "f\"abc\x00" {
 		t.Errorf("lexeme = %q, want \"f\\\"abc\\x00\" (lexeme wrongly includes the sentinel byte)", got)
 	}
 }

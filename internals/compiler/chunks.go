@@ -2,7 +2,6 @@ package compiler
 
 import (
 	"go-bytecode-interpreter/internals/memory"
-	"go-bytecode-interpreter/internals/value"
 )
 
 type Lines struct {
@@ -12,14 +11,14 @@ type Lines struct {
 type Chunk struct {
 	Lines  []Lines
 	Code   []OpCode
-	Consts []value.Value
+	Consts []float64
 }
 
 func NewChunk(arena *memory.Arena) Chunk {
 	return Chunk{
 		Lines:  memory.AllocSliceCap[Lines](arena, 0, 64),
 		Code:   memory.AllocSliceCap[OpCode](arena, 0, 64),
-		Consts: memory.AllocSliceCap[value.Value](arena, 0, 64),
+		Consts: memory.AllocSliceCap[float64](arena, 0, 64),
 	}
 }
 
@@ -42,8 +41,8 @@ func (c *Chunk) WriteChunk(opCode OpCode, line int) {
 	}
 }
 
-func (c *Chunk) WriteConstant(value value.Value, line int) {
-	idx := c.addConst(value)
+func (c *Chunk) WriteConstant(value float64, line int) int {
+	idx := c.AddConstant(value)
 	switch c.lastByteCode() {
 	case OP_CONST:
 		c.WriteChunk(OpCode(idx&0xff), line)
@@ -52,9 +51,10 @@ func (c *Chunk) WriteConstant(value value.Value, line int) {
 		c.WriteChunk(OpCode((idx>>8)&0xff), line)
 		c.WriteChunk(OpCode(idx>>16), line)
 	}
+	return idx
 }
 
-func (c *Chunk) addConst(value value.Value) int {
+func (c *Chunk) AddConstant(value float64) int {
 	c.Consts = append(c.Consts, value)
 	return len(c.Consts) - 1 // return the index of the constant
 }

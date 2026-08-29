@@ -21,7 +21,7 @@ const (
 type VM struct {
 	ip    *uint8
 	Chunk *c.Chunk
-	Stack []Value
+	Stack []float64
 	trace bool
 
 	arena *memory.Arena
@@ -29,7 +29,7 @@ type VM struct {
 
 func NewVM(arena *memory.Arena, trace bool) *VM {
 	return &VM{
-		Stack: memory.AllocSliceCap[Value](arena, 0, 256),
+		Stack: memory.AllocSliceCap[float64](arena, 0, 256),
 		trace: trace,
 		arena: arena,
 	}
@@ -76,11 +76,11 @@ func (vm *VM) Run() InterpretResult {
 func (vm *VM) Interpret(source []byte) InterpretResult {
 
 	chunk := c.NewChunk(vm.arena)
-	compiler := c.NewCompiler(vm.arena, &chunk)
+	compiler := c.NewCompiler(vm.arena, &chunk, source)
 
 	// compile the source and emit bytecode
 	// and store that in the chunk
-	if !compiler.Compile(source) {
+	if !compiler.Compile() {
 		vm.arena.Free()
 		return InterpretCompilerError
 	}
@@ -102,11 +102,11 @@ func (vm *VM) offset() int {
 	return int(uintptr(unsafe.Pointer(vm.ip)) - uintptr(base))
 }
 
-func (vm *VM) Push(value Value) {
+func (vm *VM) Push(value float64) {
 	vm.Stack = append(vm.Stack, value)
 }
 
-func (vm *VM) Pop() Value {
+func (vm *VM) Pop() float64 {
 	elem := vm.Stack[len(vm.Stack)-1]
 	vm.Stack = vm.Stack[:len(vm.Stack)-1]
 	return elem

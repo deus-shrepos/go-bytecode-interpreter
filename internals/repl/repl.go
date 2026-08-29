@@ -2,8 +2,8 @@ package repl
 
 import (
 	"fmt"
-	"go-bytecode-interpreter/internals/compiler"
 	"go-bytecode-interpreter/internals/memory"
+	"go-bytecode-interpreter/internals/vm"
 	"os"
 )
 
@@ -20,8 +20,8 @@ func (r Repl) LoadProgramFromPath(path string) {
 	}
 
 	arena := memory.NewArena(1 << 16)
-	compiler := compiler.NewCompiler(arena)
-	compiler.Compile(file)
+	vm := vm.NewVM(arena, false)
+	vm.Interpret(file) // VM dispatch
 }
 
 // todo: we are going to do this later cuz we have other important
