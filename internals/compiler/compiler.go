@@ -8,7 +8,6 @@ import (
 	"math"
 	"os"
 	"strconv"
-	"text/template/parse"
 )
 
 type Compiler struct {
@@ -17,6 +16,7 @@ type Compiler struct {
 	scanner        lexer.Scanner
 	hadError       bool
 	panicMode      bool
+	debugMode      bool
 	chunk          *Chunk
 	compilingChunk *Chunk
 	arena          *memory.Arena // long-lived objects
@@ -24,10 +24,12 @@ type Compiler struct {
 
 func NewCompiler(arena *memory.Arena, chunk *Chunk, source []byte) *Compiler {
 	return &Compiler{
-		arena:    arena,
-		chunk:    chunk,
-		scanner:  *lexer.NewScanner(source),
-		hadError: false,
+		arena:     arena,
+		chunk:     chunk,
+		scanner:   *lexer.NewScanner(source),
+		hadError:  false,
+		panicMode: false,
+		debugMode: false,
 	}
 }
 
@@ -58,7 +60,7 @@ func (c *Compiler) advance() {
 }
 
 func (c *Compiler) expression() {
-	return
+	c.parsePrecedence(PrecAssignment)
 }
 
 func (c *Compiler) consume(tokeType lexer.TokenType, message string) {
@@ -75,7 +77,10 @@ func (c *Compiler) emitByteCode(byteCode OpCode) {
 }
 
 func (c *Compiler) endCompiler() {
-	c.emitReturn()
+	c.emitByteCode(OP_RETURN)
+	if c.debugMode && c.hadError {
+		DisassembleChunk(*c.chunk, "code")
+	}
 }
 
 func (c *Compiler) emitReturn() {
@@ -93,39 +98,52 @@ func (c *Compiler) grouping() {
 }
 
 func (c *Compiler) parsePrecedence(prec Precedence) {
-
-	return
+	c.advance() // consumer the prefix
+	prefixRule := rules[c.previous.Type].prefix
+	if prefixRule == nil {
+		c.reportError("Expect Expression.")
+		return
+	}
+	prefixRule(c)
+	for prec <= rules[c.current.Type].prec {
+		c.advance()
+		infixRule := rules[c.previous.Type].infix
+		infixRule(c)
+	}
 }
 
 func (c *Compiler) unary() {
 	operaterType := c.previous.Type
 
 	// compile the operand
-	c.expression()
-
+	c.parsePrecedence(PrecUnary)
 	switch operaterType {
 	case lexer.MINUS:
 		c.emitByteCode(OP_NEGATE)
-		break
 	default:
 		return
 	}
 
 }
 
-func (c *Compiler) Binary() {
+func (c *Compiler) binary() {
 	operatorType := c.previous.Type
 
-	rule := getRule(operatorType)
-	c.parsePrecedence(Precedence(rule.precedence + 1)))
+	rule := rules[operatorType]
+	// left-assoc precedence
+	c.parsePrecedence(Precedence(rule.prec + 1))
 
 	switch operatorType {
-		case lexer.PLUS: c.emitByteCode(OP_ADD) break
-		case lexer.MINUS: c.emitByteCode(OP_SUBTRACT) break
-		case lexer.START: c.emitByteCode(OP_MULTIPLY) break
-		case lexer.SLASH: c.emitByteCode(OP_DIVIDE) break
-		default:
-			return
+	case lexer.PLUS:
+		c.emitByteCode(OP_ADD)
+	case lexer.MINUS:
+		c.emitByteCode(OP_SUBTRACT)
+	case lexer.STAR:
+		c.emitByteCode(OP_MULTIPLY)
+	case lexer.SLASH:
+		c.emitByteCode(OP_DIVIDE)
+	default:
+		return
 	}
 }
 
@@ -135,7 +153,10 @@ func (c *Compiler) number() {
 		c.reportError(err.Error())
 		return
 	}
-	c.emitBytes(OP_CONST, OpCode(c.makeConstant(value)))
+	c.emitByteCode(OP_CONST)
+	c.makeConstant(value) // emits constant and the adds value to the value array
+	// c.emitByteCode(OpCode(c.makeConstant(value)))
+	// c.emitBytes(OP_CONST, OpCode(c.makeConstant(value)))
 }
 
 func (c *Compiler) makeConstant(value float64) uint8 {
