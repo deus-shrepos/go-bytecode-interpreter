@@ -38,10 +38,16 @@ type Mark struct {
 type ArenaStats struct {
 	TotalChunks int
 	TotalBytes  int
+	// CurrentUsed/CurrentRemaining describe only the current chunk — old
+	// chunks' used amounts are not recorded (their tails are stranded by
+	// grow), so whole-arena utilization cannot be derived from Stats alone.
+	CurrentUsed      int
+	CurrentRemaining int
 }
 
 func (as ArenaStats) String() string {
-	return fmt.Sprintf("{TotalChunks=%d, TotalBytes=%d}", as.TotalChunks, as.TotalBytes)
+	return fmt.Sprintf("{TotalChunks=%d, TotalBytes=%d, CurrentUsed=%d, CurrentRemaining=%d}",
+		as.TotalChunks, as.TotalBytes, as.CurrentUsed, as.CurrentRemaining)
 }
 
 // NewArena creates an arena with the given initial capacity.
@@ -166,7 +172,25 @@ func (a *Arena) Stats() ArenaStats {
 		totalBytes += len(walk.buf)
 		walk = walk.next
 	}
-	return ArenaStats{totalChunks, totalBytes}
+	return ArenaStats{
+		TotalChunks:      totalChunks,
+		TotalBytes:       totalBytes,
+		CurrentUsed:      int(a.offset),
+		CurrentRemaining: int(a.end - a.offset),
+	}
+}
+
+// AppendChunkCaps appends each chunk's capacity to buf, current chunk first,
+// and returns the extended slice. Pass a buffer with spare capacity to make
+// the call allocation-free — needed by probes measuring the arena while also
+// measuring the Go heap, so the observation doesn't pollute the measurement.
+func (a *Arena) AppendChunkCaps(buf []int) []int {
+	walk := a.current
+	for walk != nil {
+		buf = append(buf, len(walk.buf))
+		walk = walk.next
+	}
+	return buf
 }
 
 func (a *Arena) Remaining() int { return int(a.end) - int(a.offset) }
