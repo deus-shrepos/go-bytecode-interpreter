@@ -7,8 +7,8 @@ import (
 	"runtime"
 	"strings"
 	"sync/atomic"
+	"time"
 )
-
 
 type Trace struct {
 	output io.Writer
@@ -24,16 +24,23 @@ func NewTrace(out io.Writer) Trace {
 	return Trace{output: out}
 }
 
-func setTrace(traceType uint8) func() {
+func setTrace(trace uint8) func() {
 	pc, _, _, ok := runtime.Caller(1)
 	if !ok {
-		return func(){}
+		return func() {}
 	}
-	funcName := runtime.FuncForPC(pc).Name()
-	depth.Add(1)
-	fmt.Printf("---> Entering %s \n"+strings.Repeat(" ", int(depth.Load())), funcName)
+	funcName := filterFuncName(runtime.FuncForPC(pc).Name())
+	start := time.Now()
+	d := depth.Add(1) - 1
+	fmt.Fprintf(os.Stdin, "%s --> Entering %s() \n", strings.Repeat(" ", int(d)), funcName)
 	return func() {
-		fmt.Printf("<--- Exiting %s \n", funcName)
+		fmt.Fprintf(os.Stdin, "%s <-- Exiting %s() (took %s)\n", strings.Repeat(" ", int(d)), funcName, time.Since(start))
 		depth.Add(-1)
 	}
+
+}
+
+func filterFuncName(name string) string {
+	str1 := strings.SplitAfterN(name, ".", 2)[1]
+	return strings.SplitN(str1, ".", 2)[1]
 }
