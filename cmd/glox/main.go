@@ -1,32 +1,63 @@
 package main
 
 import (
+	"flag"
 	"fmt"
-	"go-bytecode-interpreter/internals/repl"
+	"go-bytecode-interpreter/internals/compiler"
+	"go-bytecode-interpreter/internals/source"
 	"os"
+	"strings"
 )
 
-func cliHelp() {
-	fmt.Println("Valid Args:")
-	fmt.Println("--path: load from a specific path")
-	fmt.Println("--cli:  interactive repl")
+const helpString = `
+Valid Args:
+ compile <path>: compile a glox program
+ compile <path> --trace-compiler: load compile execution traces
+ run <path>: execute a glox program		
+`
+
+func help() {
+	fmt.Fprintf(os.Stderr, "%s", helpString)
+	os.Exit(2)
 }
 
 func main() {
-	r := repl.NewCLI()
+	if len(os.Args) < 2 {
+		help()
+	}
+
 	switch os.Args[1] {
-	case "--interactive":
-		r.Cli()
-	case "--path":
-		if os.Args[3] == "--compile-mode" {
-			r.SetMode(repl.CompileMode)
+	case "compile":
+		fs := flag.NewFlagSet("compile", flag.ExitOnError)
+		traceCompiler := fs.Bool("trace-compiler", false, "trace compilation")
+		tracePrecedence := fs.Bool("trace-prec", false, "trace tracedence")
+		fs.Parse(os.Args[2:])
+		if fs.NArg() == 0 {
+			fmt.Fprintf(os.Stderr, "usage: glox compile <path> [--trace-compiler] [--trace-precedence]")
+			os.Exit(2)
 		}
-		if os.Args[3] == "--compile-debug-mode" {
-			r.SetMode(repl.CompileDebugMode)
+		var trace uint8
+		if *traceCompiler {
+			fmt.Println("Trace Enabled")
+			trace |= compiler.TraceCompiler
 		}
-		r.LoadProgramFromPath(os.Args[2])
+
+		if *tracePrecedence {
+			trace |= compiler.TracePrecedence
+		}
+		source.CompileProgram(strings.Trim(fs.Arg(0), " "), trace)
+		os.Exit(0)
+	case "run":
+		fs := flag.NewFlagSet("run", flag.ExitOnError)
+		if fs.NArg() != 1 {
+			fmt.Fprintf(os.Stderr, "usage: glox run <path>")
+		}
+		source.RunProgram(fs.Arg(0))
+		os.Exit(0)
+	case "repl":
+		fmt.Fprintf(os.Stdin, "Not implemented yet")
 	default:
-		cliHelp()
+		help()
 	}
 
 }

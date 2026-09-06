@@ -70,18 +70,12 @@ func (vm *VM) Run() InterpretResult {
 	}
 }
 
-func (vm *VM) Interpret(source []byte) InterpretResult {
-
-	chunk := c.NewChunk(vm.arena)
-	compiler := c.NewCompiler(vm.arena, &chunk, source)
-
-	// compile the source and emit bytecode
-	// and store that in the chunk
+func (vm *VM) Interpret(source []byte, chunk *c.Chunk, compiler *c.Compiler) InterpretResult {
 	if !compiler.Compile() {
 		vm.arena.Free()
 		return InterpretCompilerError
 	}
-	vm.Chunk = &chunk
+	vm.Chunk = chunk
 	vm.ip = (*uint8)(unsafe.Pointer(&vm.Chunk.Code[0]))
 	result := vm.Run()
 	vm.arena.Free()
