@@ -22,7 +22,7 @@ func NewChunk(arena *memory.Arena) Chunk {
 	}
 }
 
-func (c *Chunk) WriteChunk(opCode OpCode, line int) {
+func (c *Chunk) WriteOpCode(opCode OpCode, line int) {
 	c.Code = append(
 		c.Code,
 		opCode,
@@ -47,11 +47,11 @@ func (c *Chunk) WriteConstant(value float64, line int) int {
 	//nolint:exhaustive
 	switch c.lastByteCode() {
 	case OP_CONST:
-		c.WriteChunk(OpCode(idx&0xff), line)
+		c.WriteOpCode(OpCode(idx&0xff), line)
 	case OP_CONST_LONG:
-		c.WriteChunk(OpCode(idx&0xff), line)
-		c.WriteChunk(OpCode((idx>>8)&0xff), line)
-		c.WriteChunk(OpCode(idx>>16), line)
+		c.WriteOpCode(OpCode(idx&0xff), line)
+		c.WriteOpCode(OpCode((idx>>8)&0xff), line)
+		c.WriteOpCode(OpCode(idx>>16), line)
 	default:
 		return -1 // incorrect opcode
 	}

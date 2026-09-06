@@ -13,7 +13,7 @@ import (
 
 const (
 	TraceCompiler = 1 << iota
-	TacePrecedence
+	TracePrecedence
 )
 
 type Compiler struct {
@@ -31,7 +31,6 @@ type Compiler struct {
 	// Flag that traces entire compilation,
 	// or just precedence
 	Trace uint8
-
 }
 
 func NewCompiler(arena *memory.Arena, chunk *Chunk, source []byte) *Compiler {
@@ -103,13 +102,7 @@ func (c *Compiler) emitByteCode(byteCode OpCode) {
 	if c.isTraceEnabled() {
 		defer setTrace(c.Trace)()
 	}
-	// write the chunk and record the previous line for runtime error info
-	// if constant == -1 {
-	// c.reportError("Expected CONST opcode.)}
-	c.chunk.WriteChunk(byteCode, c.previous.Line)
-	if constant == -1 {
-		c.reportError("Expected CONST opcode.")
-	}
+	c.chunk.WriteOpCode(byteCode, c.previous.Line)
 }
 
 func (c *Compiler) endCompiler() {
@@ -130,6 +123,9 @@ func (c *Compiler) emitReturn() {
 }
 
 func (c *Compiler) emitBytes(b1 OpCode, b2 OpCode) {
+	if c.isTraceEnabled() {
+		defer setTrace(c.Trace)()
+	}
 	c.emitByteCode(b1)
 	c.emitByteCode(b2)
 }
@@ -230,6 +226,9 @@ func (c *Compiler) makeConstant(value float64) uint8 {
 }
 
 func (c *Compiler) reportError(message string) {
+	if c.isTraceEnabled() {
+		defer setTrace(c.Trace)()
+	}
 	c.panicMode = true
 	err := errors.NewError(c.current, errors.CompilePhaseError, message)
 	fmt.Fprintf(os.Stderr, "%s", err.Error())
