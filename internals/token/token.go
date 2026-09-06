@@ -1,17 +1,18 @@
-package lexer
+package token
 
 import (
 	"fmt"
+	"os"
 	"unsafe"
 )
 
 //go:generate stringer -type=TokenType
-type TokenType uint8
+type Kind uint8
 
 const (
 
 	// Single character tokens
-	LEFT_PAREN TokenType = iota
+	LEFT_PAREN Kind = iota
 	RIGHT_PAREN
 	LEFT_BRACE
 	RIGHT_BRACE
@@ -66,13 +67,13 @@ const (
 )
 
 type Token struct {
-	Type   TokenType
 	Start  unsafe.Pointer
 	Length int
 	Line   int
+	Type   Kind
 }
 
-func NewToken(ttype TokenType, start unsafe.Pointer, length int, line int) Token {
+func NewToken(ttype Kind, start unsafe.Pointer, length int, line int) Token {
 	return Token{
 		Type:   ttype,
 		Start:  start,
@@ -81,11 +82,14 @@ func NewToken(ttype TokenType, start unsafe.Pointer, length int, line int) Token
 	}
 }
 
-func (t *Token) Lexeme() string {
+func (t Token) Kind() Kind {
+	return t.Type
+}
+func (t Token) Lexeme() string {
 	return unsafe.String((*byte)(t.Start), t.Length)
 }
 
-func (t *Token) String() string {
-	return fmt.Sprintf("Token[type=%v, start=%p, length=%d, line=%d]", t.Type, t.Start, t.Length, t.Line)
-
+func (t *Token) Print() {
+	fmt.Fprintf(os.Stdout, "Token[Type=%v, Start=%p, length=%d, line=%d]",
+		t.Type, *(*int)(t.Start), t.Length, t.Line)
 }

@@ -3,7 +3,7 @@ package errors
 import (
 	"errors"
 	"fmt"
-	"go-bytecode-interpreter/internals/lexer"
+	"go-bytecode-interpreter/internals/token"
 	"os"
 	"strings"
 )
@@ -15,10 +15,10 @@ var RuntimePhaseError = errors.New("RuntimePhase")
 type Error struct {
 	Phase   error
 	Message string
-	token   lexer.Token
+	token   token.Token
 }
 
-func NewError(token lexer.Token, phase error, msg string) Error {
+func NewError(token token.Token, phase error, msg string) Error {
 
 	return Error{
 		Phase:   phase,
@@ -27,22 +27,21 @@ func NewError(token lexer.Token, phase error, msg string) Error {
 	}
 }
 
-func (e *Error) Error() string {
-	errorString := strings.Builder{}
-	fmt.Fprintf(&errorString, "[line %d] %s", e.token.Line, e.Phase)
+func (e Error) Error() string {
+	err := strings.Builder{}
+	fmt.Fprintf(&err, "[line %d] %s", e.token.Line, e.Phase)
 	switch e.token.Type {
-	case lexer.EOF:
-		fmt.Fprintf(&errorString, " at end")
-	case lexer.ERROR:
+	case token.EOF:
+		fmt.Fprintf(&err, " at end")
+	case token.ERROR:
 		break
 	default:
-		fmt.Fprintf(&errorString, " at '%s'", e.token.Lexeme())
+		fmt.Fprintf(&err, " at '%s'", e.token.Lexeme())
 	}
-
 	fmt.Fprintf(os.Stderr, ": %s\n", e.Message)
-	return fmt.Sprintf(errorString.String())
+	return err.String()
 }
 
-func (e *Error) Unwrap() error {
+func (e Error) Unwrap() error {
 	return e.Phase
 }

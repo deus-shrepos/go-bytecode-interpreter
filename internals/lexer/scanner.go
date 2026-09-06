@@ -2,6 +2,7 @@ package lexer
 
 import (
 	"fmt"
+	"go-bytecode-interpreter/internals/token"
 	"strings"
 	"unsafe"
 )
@@ -24,14 +25,14 @@ func NewScanner(source []byte) *Scanner {
 	}
 }
 
-func (s *Scanner) ScanToken() Token {
+func (s *Scanner) ScanToken() token.Token {
 	// scan whitespace and advance
 	s.skipWhiteSpace()
 	// scan the current lexeme (at the start of it)
 	s.start = s.current
 	if s.isAtEnd() {
 		// the sentinel value to stop the compiler
-		return s.makeToken(EOF)
+		return s.makeToken(token.EOF)
 	}
 	c := s.advance()
 	if c == 'f' && s.peek() == '"' {
@@ -47,63 +48,63 @@ func (s *Scanner) ScanToken() Token {
 
 	switch c {
 	case '(':
-		return s.makeToken(LEFT_PAREN)
+		return s.makeToken(token.LEFT_PAREN)
 	case ')':
-		return s.makeToken(RIGHT_PAREN)
+		return s.makeToken(token.RIGHT_PAREN)
 	case '{':
-		return s.makeToken(LEFT_BRACE)
+		return s.makeToken(token.LEFT_BRACE)
 	case '}':
 		if s.interpMode == true {
 			s.interpMode = false
 			if s.fstringScan() == '"' {
 				s.advance()
-				return s.makeToken(F_STRING_END)
+				return s.makeToken(token.F_STRING_END)
 			}
 			if s.fstringScan() == '{' {
 				s.interpMode = true
 				s.advance()
-				return s.makeToken(F_STRING_MID)
+				return s.makeToken(token.F_STRING_MID)
 			}
 		}
-		return s.makeToken(RIGHT_BRACE)
+		return s.makeToken(token.RIGHT_BRACE)
 	case ';':
-		return s.makeToken(SEMICOLON)
+		return s.makeToken(token.SEMICOLON)
 	case ',':
-		return s.makeToken(COMMA)
+		return s.makeToken(token.COMMA)
 	case '.':
-		return s.makeToken(DOT)
+		return s.makeToken(token.DOT)
 	case '-':
-		return s.makeToken(MINUS)
+		return s.makeToken(token.MINUS)
 	case '+':
-		return s.makeToken(PLUS)
+		return s.makeToken(token.PLUS)
 	case '/':
-		return s.makeToken(SLASH)
+		return s.makeToken(token.SLASH)
 	case '*':
-		return s.makeToken(STAR)
+		return s.makeToken(token.STAR)
 	case '!':
 		if s.match('=') {
-			return s.makeToken(BANG_EQUAL)
+			return s.makeToken(token.BANG_EQUAL)
 		} else {
-			return s.makeToken(BANG)
+			return s.makeToken(token.BANG)
 		}
 	case '=':
 		if s.match('=') {
-			return s.makeToken(EQUAL_EQUAL)
+			return s.makeToken(token.EQUAL_EQUAL)
 		} else {
-			return s.makeToken(EQUAL)
+			return s.makeToken(token.EQUAL)
 		}
 
 	case '<':
 		if s.match('=') {
-			return s.makeToken(LESS_EQUAL)
+			return s.makeToken(token.LESS_EQUAL)
 		} else {
-			return s.makeToken(LESS)
+			return s.makeToken(token.LESS)
 		}
 	case '>':
 		if s.match('=') {
-			return s.makeToken(GREATER_EQUAL)
+			return s.makeToken(token.GREATER_EQUAL)
 		} else {
-			return s.makeToken(GREATER)
+			return s.makeToken(token.GREATER)
 		}
 	case '"':
 		return s.string()
@@ -113,8 +114,8 @@ func (s *Scanner) ScanToken() Token {
 	}
 }
 
-func (s *Scanner) makeToken(ttype TokenType) Token {
-	return Token{
+func (s *Scanner) makeToken(ttype token.Kind) token.Token {
+	return token.Token{
 		Type:   ttype,
 		Start:  s.start,
 		Length: (int)(uintptr(unsafe.Add(s.current, -uintptr(s.start)))), // lexeme[n] - lexeme[0]
@@ -149,7 +150,7 @@ func (s *Scanner) skipWhiteSpace() {
 		}
 	}
 }
-func (s *Scanner) string() Token {
+func (s *Scanner) string() token.Token {
 	for s.peek() != '"' && !s.isAtEnd() {
 		if s.peek() == '\n' {
 			s.line++
@@ -161,20 +162,20 @@ func (s *Scanner) string() Token {
 		return s.errorToken("Unterminated string")
 	}
 	s.advance() // need to close the qoute
-	return s.makeToken(STRING)
+	return s.makeToken(token.STRING)
 }
 
-func (s *Scanner) fstringStart() Token {
+func (s *Scanner) fstringStart() token.Token {
 	if s.fstringScan() == '{' {
 		s.interpMode = true
 		s.advance()
-		return s.makeToken(F_STRING_START)
+		return s.makeToken(token.F_STRING_START)
 	}
 
 	// in case we don't find any "{}"
 	// we will just parse it as a string
 	s.advance()
-	return s.makeToken(F_STRING_END)
+	return s.makeToken(token.F_STRING_END)
 }
 
 func (s *Scanner) fstringScan() byte {
@@ -187,7 +188,7 @@ func (s *Scanner) fstringScan() byte {
 	return s.peek()
 }
 
-func (s *Scanner) makeNumber() Token {
+func (s *Scanner) makeNumber() token.Token {
 	// find the digit and keep advancing
 	for isDigit(s.peek()) {
 		s.advance()
@@ -200,10 +201,10 @@ func (s *Scanner) makeNumber() Token {
 			s.advance()
 		}
 	}
-	return s.makeToken(NUMBER)
+	return s.makeToken(token.NUMBER)
 }
 
-func (s *Scanner) makeIdentifier() Token {
+func (s *Scanner) makeIdentifier() token.Token {
 	for isAlpha(s.peek()) || isDigit(s.peek()) {
 		s.advance()
 	}
@@ -232,61 +233,61 @@ func (s *Scanner) match(b byte) bool {
 	return true
 }
 
-func (s *Scanner) identifierType() TokenType {
+func (s *Scanner) identifierType() token.Kind {
 	switch *(*byte)(s.start) {
 	case 'a':
-		return s.checkKeyword(1, 2, "nd", AND)
+		return s.checkKeyword(1, 2, "nd", token.AND)
 	case 'c':
-		return s.checkKeyword(1, 4, "lass", CLASS)
+		return s.checkKeyword(1, 4, "lass", token.CLASS)
 	case 'e':
-		return s.checkKeyword(1, 3, "lse", ELSE)
+		return s.checkKeyword(1, 3, "lse", token.ELSE)
 	case 'f':
 		next := *(*byte)(unsafe.Add(s.start, 1))
 		switch next {
 		case 'a':
-			return s.checkKeyword(2, 3, "lse", FALSE)
+			return s.checkKeyword(2, 3, "lse", token.FALSE)
 		case 'u':
-			return s.checkKeyword(2, 1, "n", FUN)
+			return s.checkKeyword(2, 1, "n", token.FUN)
 		case 'o':
-			return s.checkKeyword(2, 1, "r", FOR)
+			return s.checkKeyword(2, 1, "r", token.FOR)
 		}
 	case 'i':
-		return s.checkKeyword(1, 1, "f", IF)
+		return s.checkKeyword(1, 1, "f", token.IF)
 	case 'n':
-		return s.checkKeyword(1, 2, "il", NIL)
+		return s.checkKeyword(1, 2, "il", token.NIL)
 	case 'o':
-		return s.checkKeyword(1, 1, "r", OR)
+		return s.checkKeyword(1, 1, "r", token.OR)
 	case 'p':
-		return s.checkKeyword(1, 4, "rint", PRINT)
+		return s.checkKeyword(1, 4, "rint", token.PRINT)
 	case 'r':
-		return s.checkKeyword(1, 5, "eturn", RETURN)
+		return s.checkKeyword(1, 5, "eturn", token.RETURN)
 	case 's':
-		return s.checkKeyword(1, 4, "uper", SUPER)
+		return s.checkKeyword(1, 4, "uper", token.SUPER)
 	case 't':
 		next := *(*byte)(unsafe.Add(s.start, 1))
 		switch next {
 		case 'h':
-			return s.checkKeyword(2, 2, "is", THIS)
+			return s.checkKeyword(2, 2, "is", token.THIS)
 		case 'r':
-			return s.checkKeyword(2, 2, "ue", TRUE)
+			return s.checkKeyword(2, 2, "ue", token.TRUE)
 		}
 	case 'v':
-		return s.checkKeyword(1, 2, "ar", VAR)
+		return s.checkKeyword(1, 2, "ar", token.VAR)
 	case 'w':
-		return s.checkKeyword(1, 4, "hile", WHILE)
+		return s.checkKeyword(1, 4, "hile", token.WHILE)
 	}
 
-	return IDENTIFIER
+	return token.IDENTIFIER
 }
 
-func (s *Scanner) checkKeyword(start int, length int, rest string, tokenType TokenType) TokenType {
+func (s *Scanner) checkKeyword(start int, length int, rest string, tokenType token.Kind) token.Kind {
 	// check the length and match the strings
 	// we move the s.start to the current start position
 	if (calcPtrDiff(s.start, s.current) == (start + length)) &&
 		(MatchString(unsafe.Add(s.start, start), rest, length) == 0) {
 		return tokenType
 	}
-	return IDENTIFIER
+	return token.IDENTIFIER
 }
 
 func (s *Scanner) isAtEnd() bool {
@@ -298,10 +299,10 @@ func (s *Scanner) advance() byte {
 	return *(*byte)(unsafe.Add(s.current, -1))
 }
 
-func (s *Scanner) errorToken(message string) Token {
+func (s *Scanner) errorToken(message string) token.Token {
 	byteString := []byte(message)
-	return Token{
-		Type:   ERROR,
+	return token.Token{
+		Type:   token.ERROR,
 		Start:  unsafe.Pointer(&byteString[0]),
 		Length: len(message),
 		Line:   s.line,

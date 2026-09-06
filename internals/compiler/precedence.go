@@ -1,10 +1,18 @@
 package compiler
 
 import (
-	token "go-bytecode-interpreter/internals/lexer"
+	token "go-bytecode-interpreter/internals/token"
 )
 
 type Precedence uint8
+
+type ParseFunc func(*Compiler)
+
+type ParseRule struct {
+	prefix ParseFunc
+	infix  ParseFunc
+	prec   Precedence
+}
 
 const (
 	PrecNone Precedence = iota
@@ -20,18 +28,10 @@ const (
 	PrecPrimary
 )
 
-type ParseFunc func(*Compiler)
-
-type ParseRule struct {
-	prefix ParseFunc
-	infix  ParseFunc
-	prec   Precedence
-}
-
-var rules map[token.TokenType]ParseRule
+var rules map[token.Kind]ParseRule
 
 func initRules() bool {
-	rules = map[token.TokenType]ParseRule{
+	rules = map[token.Kind]ParseRule{
 		token.LEFT_PAREN:    {(*Compiler).grouping, nil, PrecNone},
 		token.RIGHT_PAREN:   {nil, nil, PrecNone},
 		token.LEFT_BRACE:    {nil, nil, PrecNone},

@@ -6,6 +6,7 @@ import (
 	"unsafe"
 
 	"go-bytecode-interpreter/internals/lexer"
+	"go-bytecode-interpreter/internals/token"
 )
 
 // byteAt safely dereferences a Token.Start pointer as a single byte.
@@ -17,19 +18,19 @@ func TestScanToken_SingleCharTokens(t *testing.T) {
 	cases := []struct {
 		name string
 		ch   byte
-		want lexer.TokenType
+		want token.Kind
 	}{
-		{"LEFT_PAREN", '(', lexer.LEFT_PAREN},
-		{"RIGHT_PAREN", ')', lexer.RIGHT_PAREN},
-		{"LEFT_BRACE", '{', lexer.LEFT_BRACE},
-		{"RIGHT_BRACE", '}', lexer.RIGHT_BRACE},
-		{"COMMA", ',', lexer.COMMA},
-		{"DOT", '.', lexer.DOT},
-		{"MINUS", '-', lexer.MINUS},
-		{"PLUS", '+', lexer.PLUS},
-		{"SEMICOLON", ';', lexer.SEMICOLON},
-		{"SLASH", '/', lexer.SLASH},
-		{"STAR", '*', lexer.STAR},
+		{"LEFT_PAREN", '(', token.LEFT_PAREN},
+		{"RIGHT_PAREN", ')', token.RIGHT_PAREN},
+		{"LEFT_BRACE", '{', token.LEFT_BRACE},
+		{"RIGHT_BRACE", '}', token.RIGHT_BRACE},
+		{"COMMA", ',', token.COMMA},
+		{"DOT", '.', token.DOT},
+		{"MINUS", '-', token.MINUS},
+		{"PLUS", '+', token.PLUS},
+		{"SEMICOLON", ';', token.SEMICOLON},
+		{"SLASH", '/', token.SLASH},
+		{"STAR", '*', token.STAR},
 	}
 
 	for _, tc := range cases {
@@ -56,12 +57,12 @@ func TestScanToken_MultiTokenSequence(t *testing.T) {
 	source := []byte("(+@+)\x00")
 	s := lexer.NewScanner(source)
 
-	want := []lexer.TokenType{
-		lexer.LEFT_PAREN,
-		lexer.PLUS,
-		lexer.ERROR,
-		lexer.PLUS,
-		lexer.RIGHT_PAREN,
+	want := []token.Kind{
+		token.LEFT_PAREN,
+		token.PLUS,
+		token.ERROR,
+		token.PLUS,
+		token.RIGHT_PAREN,
 	}
 
 	for i, wantType := range want {
@@ -71,7 +72,7 @@ func TestScanToken_MultiTokenSequence(t *testing.T) {
 		}
 	}
 
-	if tok := s.ScanToken(); tok.Type != lexer.EOF {
+	if tok := s.ScanToken(); tok.Type != token.EOF {
 		t.Errorf("final token Type = %v, want EOF", tok.Type)
 	}
 }
@@ -81,7 +82,7 @@ func TestScanToken_EOFOnEmptySource(t *testing.T) {
 	s := lexer.NewScanner(source)
 
 	tok := s.ScanToken()
-	if tok.Type != lexer.EOF {
+	if tok.Type != token.EOF {
 		t.Errorf("Type = %v, want EOF", tok.Type)
 	}
 }
@@ -110,7 +111,7 @@ func TestScanToken_Identifier(t *testing.T) {
 			s := lexer.NewScanner(source)
 			tok := s.ScanToken()
 
-			if tok.Type != lexer.IDENTIFIER {
+			if tok.Type != token.IDENTIFIER {
 				t.Fatalf("Type = %v, want IDENTIFIER", tok.Type)
 			}
 			if tok.Length != tc.wantLength {
@@ -145,7 +146,7 @@ func TestScanToken_Number(t *testing.T) {
 			s := lexer.NewScanner(source)
 			tok := s.ScanToken()
 
-			if tok.Type != lexer.NUMBER {
+			if tok.Type != token.NUMBER {
 				t.Fatalf("Type = %v, want NUMBER", tok.Type)
 			}
 			if tok.Length != tc.wantLength {
@@ -160,7 +161,7 @@ func TestScanToken_Number_TrailingDotNotConsumed(t *testing.T) {
 	s := lexer.NewScanner(source)
 
 	numTok := s.ScanToken()
-	if numTok.Type != lexer.NUMBER {
+	if numTok.Type != token.NUMBER {
 		t.Fatalf("first token Type = %v, want NUMBER", numTok.Type)
 	}
 	if numTok.Length != 3 {
@@ -168,7 +169,7 @@ func TestScanToken_Number_TrailingDotNotConsumed(t *testing.T) {
 	}
 
 	dotTok := s.ScanToken()
-	if dotTok.Type != lexer.DOT {
+	if dotTok.Type != token.DOT {
 		t.Errorf("second token Type = %v, want DOT", dotTok.Type)
 	}
 }
@@ -181,12 +182,12 @@ func TestScanToken_Number_MultipleDots(t *testing.T) {
 	s := lexer.NewScanner(source)
 
 	want := []struct {
-		ttype  lexer.TokenType
+		ttype  token.Kind
 		length int
 	}{
-		{lexer.NUMBER, 3}, // "1.2"
-		{lexer.DOT, 1},
-		{lexer.NUMBER, 1}, // "3"
+		{token.NUMBER, 3}, // "1.2"
+		{token.DOT, 1},
+		{token.NUMBER, 1}, // "3"
 	}
 
 	for i, w := range want {
@@ -201,29 +202,29 @@ func TestScanToken_Number_MultipleDots(t *testing.T) {
 }
 
 // TestScanToken_Keywords asserts every reserved word in the language
-// (token.go's Keywords block) scans to its dedicated TokenType rather than
+// (token.go's Keywords block) scans to its dedicated Kind rather than
 // IDENTIFIER. Table mirrors clox's keyword set exactly.
 func TestScanToken_Keywords(t *testing.T) {
 	cases := []struct {
 		source string
-		want   lexer.TokenType
+		want   token.Kind
 	}{
-		{"and", lexer.AND},
-		{"class", lexer.CLASS},
-		{"else", lexer.ELSE},
-		{"false", lexer.FALSE},
-		{"for", lexer.FOR},
-		{"fun", lexer.FUN},
-		{"if", lexer.IF},
-		{"nil", lexer.NIL},
-		{"or", lexer.OR},
-		{"print", lexer.PRINT},
-		{"return", lexer.RETURN},
-		{"super", lexer.SUPER},
-		{"this", lexer.THIS},
-		{"true", lexer.TRUE},
-		{"var", lexer.VAR},
-		{"while", lexer.WHILE},
+		{"and", token.AND},
+		{"class", token.CLASS},
+		{"else", token.ELSE},
+		{"false", token.FALSE},
+		{"for", token.FOR},
+		{"fun", token.FUN},
+		{"if", token.IF},
+		{"nil", token.NIL},
+		{"or", token.OR},
+		{"print", token.PRINT},
+		{"return", token.RETURN},
+		{"super", token.SUPER},
+		{"this", token.THIS},
+		{"true", token.TRUE},
+		{"var", token.VAR},
+		{"while", token.WHILE},
 	}
 
 	for _, tc := range cases {
@@ -270,7 +271,7 @@ func TestScanToken_KeywordLikeIdentifiers(t *testing.T) {
 			s := lexer.NewScanner(source)
 			tok := s.ScanToken()
 
-			if tok.Type != lexer.IDENTIFIER {
+			if tok.Type != token.IDENTIFIER {
 				t.Errorf("source %q: Type = %v, want IDENTIFIER", src, tok.Type)
 			}
 			if tok.Length != len(src) {
@@ -291,7 +292,7 @@ func TestScanToken_KeywordCaseSensitivity(t *testing.T) {
 			s := lexer.NewScanner(source)
 			tok := s.ScanToken()
 
-			if tok.Type != lexer.IDENTIFIER {
+			if tok.Type != token.IDENTIFIER {
 				t.Errorf("source %q: Type = %v, want IDENTIFIER (keywords are lowercase-only)", src, tok.Type)
 			}
 		})
@@ -302,17 +303,17 @@ func TestScanToken_TwoCharOperators(t *testing.T) {
 	cases := []struct {
 		name       string
 		source     string
-		wantType   lexer.TokenType
+		wantType   token.Kind
 		wantLength int
 	}{
-		{"BANG", "!", lexer.BANG, 1},
-		{"BANG_EQUAL", "!=", lexer.BANG_EQUAL, 2},
-		{"EQUAL", "=", lexer.EQUAL, 1},
-		{"EQUAL_EQUAL", "==", lexer.EQUAL_EQUAL, 2},
-		{"LESS", "<", lexer.LESS, 1},
-		{"LESS_EQUAL", "<=", lexer.LESS_EQUAL, 2},
-		{"GREATER", ">", lexer.GREATER, 1},
-		{"GREATER_EQUAL", ">=", lexer.GREATER_EQUAL, 2},
+		{"BANG", "!", token.BANG, 1},
+		{"BANG_EQUAL", "!=", token.BANG_EQUAL, 2},
+		{"EQUAL", "=", token.EQUAL, 1},
+		{"EQUAL_EQUAL", "==", token.EQUAL_EQUAL, 2},
+		{"LESS", "<", token.LESS, 1},
+		{"LESS_EQUAL", "<=", token.LESS_EQUAL, 2},
+		{"GREATER", ">", token.GREATER, 1},
+		{"GREATER_EQUAL", ">=", token.GREATER_EQUAL, 2},
 	}
 
 	for _, tc := range cases {
@@ -347,7 +348,7 @@ func TestScanToken_String(t *testing.T) {
 			s := lexer.NewScanner(source)
 			tok := s.ScanToken()
 
-			if tok.Type != lexer.STRING {
+			if tok.Type != token.STRING {
 				t.Errorf("Type = %v, want STRING", tok.Type)
 			}
 			if tok.Length != tc.wantLength {
@@ -368,7 +369,7 @@ func TestScanToken_String_Unterminated(t *testing.T) {
 	s := lexer.NewScanner(source)
 	tok := s.ScanToken()
 
-	if tok.Type != lexer.ERROR {
+	if tok.Type != token.ERROR {
 		t.Errorf("Type = %v, want ERROR (unterminated string)", tok.Type)
 	}
 }
@@ -381,7 +382,7 @@ func TestScanToken_String_UnterminatedAcrossNewlines(t *testing.T) {
 	s := lexer.NewScanner(source)
 	tok := s.ScanToken()
 
-	if tok.Type != lexer.ERROR {
+	if tok.Type != token.ERROR {
 		t.Errorf("Type = %v, want ERROR (unterminated string)", tok.Type)
 	}
 }
@@ -397,7 +398,7 @@ func TestScanToken_String_MultilineTerminated(t *testing.T) {
 	s := lexer.NewScanner(source)
 
 	strTok := s.ScanToken()
-	if strTok.Type != lexer.STRING {
+	if strTok.Type != token.STRING {
 		t.Fatalf("Type = %v, want STRING", strTok.Type)
 	}
 	if strTok.Line != 2 {
@@ -405,7 +406,7 @@ func TestScanToken_String_MultilineTerminated(t *testing.T) {
 	}
 
 	plusTok := s.ScanToken()
-	if plusTok.Type != lexer.PLUS {
+	if plusTok.Type != token.PLUS {
 		t.Fatalf("Type = %v, want PLUS", plusTok.Type)
 	}
 	if plusTok.Line != 3 {
@@ -420,16 +421,16 @@ func TestScanToken_String_MultilineTerminated(t *testing.T) {
 // next case (unlike C), so it just exits the switch without calling
 // advance(). The enclosing `for { ... }` in skipWhiteSpace then re-peeks the
 // same byte forever: scanning a literal tab or '\r' spins CPU indefinitely.
-func scanTokenWithTimeout(t *testing.T, s *lexer.Scanner) lexer.Token {
+func scanTokenWithTimeout(t *testing.T, s *lexer.Scanner) token.Token {
 	t.Helper()
-	done := make(chan lexer.Token, 1)
+	done := make(chan token.Token, 1)
 	go func() { done <- s.ScanToken() }()
 	select {
 	case tok := <-done:
 		return tok
 	case <-time.After(2 * time.Second):
 		t.Fatalf("ScanToken did not return within 2s — skipWhiteSpace is likely stuck in an infinite loop on this input (see the empty '\\t'/'\\r' cases in scanner.go)")
-		return lexer.Token{}
+		return token.Token{}
 	}
 }
 
@@ -454,11 +455,11 @@ func TestScanToken_SkipWhitespace(t *testing.T) {
 			s := lexer.NewScanner([]byte(tc.source))
 
 			first := scanTokenWithTimeout(t, s)
-			if first.Type != lexer.PLUS {
+			if first.Type != token.PLUS {
 				t.Fatalf("first token Type = %v, want PLUS", first.Type)
 			}
 			second := scanTokenWithTimeout(t, s)
-			if second.Type != lexer.PLUS {
+			if second.Type != token.PLUS {
 				t.Fatalf("second token Type = %v, want PLUS (whitespace run not fully skipped)", second.Type)
 			}
 		})
@@ -470,7 +471,7 @@ func TestScanToken_SkipComment(t *testing.T) {
 	s := lexer.NewScanner(source)
 
 	tok := s.ScanToken()
-	if tok.Type != lexer.PLUS {
+	if tok.Type != token.PLUS {
 		t.Errorf("Type = %v, want PLUS (comment not fully skipped)", tok.Type)
 	}
 }
@@ -485,7 +486,7 @@ func TestScanToken_LineTracking(t *testing.T) {
 	wantLines := []int{1, 2, 3}
 	for i, wantLine := range wantLines {
 		tok := s.ScanToken()
-		if tok.Type != lexer.PLUS {
+		if tok.Type != token.PLUS {
 			t.Fatalf("token %d: Type = %v, want PLUS", i, tok.Type)
 		}
 		if tok.Line != wantLine {
@@ -496,7 +497,7 @@ func TestScanToken_LineTracking(t *testing.T) {
 	errSource := []byte("\n\n@\x00")
 	errScanner := lexer.NewScanner(errSource)
 	errTok := errScanner.ScanToken()
-	if errTok.Type != lexer.ERROR {
+	if errTok.Type != token.ERROR {
 		t.Fatalf("Type = %v, want ERROR", errTok.Type)
 	}
 	if errTok.Line != 3 {
@@ -510,7 +511,7 @@ func TestScanToken_LineTracking(t *testing.T) {
 // counting, since f-string lexemes have irregular boundaries (they include
 // the '}'/'"' that closes the *previous* segment).
 type fstringSeq struct {
-	typ    lexer.TokenType
+	typ    token.Kind
 	lexeme string
 }
 
@@ -526,7 +527,7 @@ func assertFStringSequence(t *testing.T, source string, want []fstringSeq) {
 			t.Fatalf("token %d: lexeme = %q, want %q", i, got, w.lexeme)
 		}
 	}
-	if tok := s.ScanToken(); tok.Type != lexer.EOF {
+	if tok := s.ScanToken(); tok.Type != token.EOF {
 		t.Errorf("final token Type = %v, want EOF", tok.Type)
 	}
 }
@@ -536,7 +537,7 @@ func assertFStringSequence(t *testing.T, source string, want []fstringSeq) {
 // — no F_STRING_START is emitted for a plain f-string.
 func TestScanToken_FString_NoInterpolation(t *testing.T) {
 	assertFStringSequence(t, `f"hello"`, []fstringSeq{
-		{lexer.F_STRING_END, `f"hello"`},
+		{token.F_STRING_END, `f"hello"`},
 	})
 }
 
@@ -546,9 +547,9 @@ func TestScanToken_FString_NoInterpolation(t *testing.T) {
 // and F_STRING_END carries the closing "}" through the closing quote.
 func TestScanToken_FString_SingleInterpolation(t *testing.T) {
 	assertFStringSequence(t, `f"a {b} c"`, []fstringSeq{
-		{lexer.F_STRING_START, `f"a {`},
-		{lexer.IDENTIFIER, `b`},
-		{lexer.F_STRING_END, `} c"`},
+		{token.F_STRING_START, `f"a {`},
+		{token.IDENTIFIER, `b`},
+		{token.F_STRING_END, `} c"`},
 	})
 }
 
@@ -558,13 +559,13 @@ func TestScanToken_FString_SingleInterpolation(t *testing.T) {
 // closing "}" of one interpolation to the opening "{" of the next.
 func TestScanToken_FString_MultipleInterpolations(t *testing.T) {
 	assertFStringSequence(t, `f"this {foo} text {bar} more {baz} end"`, []fstringSeq{
-		{lexer.F_STRING_START, `f"this {`},
-		{lexer.IDENTIFIER, `foo`},
-		{lexer.F_STRING_MID, `} text {`},
-		{lexer.IDENTIFIER, `bar`},
-		{lexer.F_STRING_MID, `} more {`},
-		{lexer.IDENTIFIER, `baz`},
-		{lexer.F_STRING_END, `} end"`},
+		{token.F_STRING_START, `f"this {`},
+		{token.IDENTIFIER, `foo`},
+		{token.F_STRING_MID, `} text {`},
+		{token.IDENTIFIER, `bar`},
+		{token.F_STRING_MID, `} more {`},
+		{token.IDENTIFIER, `baz`},
+		{token.F_STRING_END, `} end"`},
 	})
 }
 
@@ -576,8 +577,8 @@ func TestScanToken_FString_MultipleInterpolations(t *testing.T) {
 // brace.
 func TestScanToken_FString_EmptyInterpolation(t *testing.T) {
 	assertFStringSequence(t, `f"{}"`, []fstringSeq{
-		{lexer.F_STRING_START, `f"{`},
-		{lexer.F_STRING_END, `}"`},
+		{token.F_STRING_START, `f"{`},
+		{token.F_STRING_END, `}"`},
 	})
 }
 
@@ -593,7 +594,7 @@ func TestScanToken_FString_Multiline(t *testing.T) {
 	s := lexer.NewScanner([]byte(source))
 
 	startTok := s.ScanToken()
-	if startTok.Type != lexer.F_STRING_START {
+	if startTok.Type != token.F_STRING_START {
 		t.Fatalf("Type = %v, want F_STRING_START", startTok.Type)
 	}
 	if startTok.Line != 2 {
@@ -601,7 +602,7 @@ func TestScanToken_FString_Multiline(t *testing.T) {
 	}
 
 	idTok := s.ScanToken()
-	if idTok.Type != lexer.IDENTIFIER {
+	if idTok.Type != token.IDENTIFIER {
 		t.Fatalf("Type = %v, want IDENTIFIER", idTok.Type)
 	}
 	if idTok.Line != 2 {
@@ -609,7 +610,7 @@ func TestScanToken_FString_Multiline(t *testing.T) {
 	}
 
 	endTok := s.ScanToken()
-	if endTok.Type != lexer.F_STRING_END {
+	if endTok.Type != token.F_STRING_END {
 		t.Fatalf("Type = %v, want F_STRING_END", endTok.Type)
 	}
 	if endTok.Line != 3 {
@@ -627,15 +628,15 @@ func TestScanToken_FString_AdjacentFIdentifier(t *testing.T) {
 	s := lexer.NewScanner(source)
 
 	idTok := s.ScanToken()
-	if idTok.Type != lexer.IDENTIFIER || idTok.Lexeme() != "f" {
+	if idTok.Type != token.IDENTIFIER || idTok.Lexeme() != "f" {
 		t.Fatalf("token 0 = (%v, %q), want (IDENTIFIER, \"f\")", idTok.Type, idTok.Lexeme())
 	}
 	plusTok := s.ScanToken()
-	if plusTok.Type != lexer.PLUS {
+	if plusTok.Type != token.PLUS {
 		t.Fatalf("token 1: Type = %v, want PLUS", plusTok.Type)
 	}
 	strTok := s.ScanToken()
-	if strTok.Type != lexer.STRING || strTok.Lexeme() != `"str"` {
+	if strTok.Type != token.STRING || strTok.Lexeme() != `"str"` {
 		t.Fatalf("token 2 = (%v, %q), want (STRING, %q)", strTok.Type, strTok.Lexeme(), `"str"`)
 	}
 }
@@ -653,15 +654,15 @@ func TestScanToken_FString_UnterminatedMidInterpolation(t *testing.T) {
 	s := lexer.NewScanner([]byte(`f"abc {expr` + "\x00"))
 
 	startTok := scanTokenWithTimeout(t, s)
-	if startTok.Type != lexer.F_STRING_START {
+	if startTok.Type != token.F_STRING_START {
 		t.Fatalf("Type = %v, want F_STRING_START", startTok.Type)
 	}
 	idTok := scanTokenWithTimeout(t, s)
-	if idTok.Type != lexer.IDENTIFIER || idTok.Lexeme() != "expr" {
+	if idTok.Type != token.IDENTIFIER || idTok.Lexeme() != "expr" {
 		t.Fatalf("token = (%v, %q), want (IDENTIFIER, \"expr\")", idTok.Type, idTok.Lexeme())
 	}
 	eofTok := scanTokenWithTimeout(t, s)
-	if eofTok.Type != lexer.EOF {
+	if eofTok.Type != token.EOF {
 		t.Errorf("Type = %v, want EOF (no ERROR token for an f-string left open mid-interpolation)", eofTok.Type)
 	}
 }
@@ -684,7 +685,7 @@ func TestScanToken_FString_UnterminatedMidInterpolation(t *testing.T) {
 func TestScanToken_FString_UnterminatedNoClose(t *testing.T) {
 	tok := scanTokenWithTimeout(t, lexer.NewScanner([]byte(`f"abc`+"\x00")))
 
-	if tok.Type != lexer.F_STRING_END {
+	if tok.Type != token.F_STRING_END {
 		t.Fatalf("Type = %v, want F_STRING_END (current, buggy behavior — see ISSUES.md)", tok.Type)
 	}
 	if got := tok.Lexeme(); got != "f\"abc\x00" {
