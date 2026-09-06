@@ -43,6 +43,8 @@ func (c *Chunk) WriteChunk(opCode OpCode, line int) {
 
 func (c *Chunk) WriteConstant(value float64, line int) int {
 	idx := c.AddConstant(value)
+
+	//nolint:exhaustive
 	switch c.lastByteCode() {
 	case OP_CONST:
 		c.WriteChunk(OpCode(idx&0xff), line)
@@ -50,6 +52,8 @@ func (c *Chunk) WriteConstant(value float64, line int) int {
 		c.WriteChunk(OpCode(idx&0xff), line)
 		c.WriteChunk(OpCode((idx>>8)&0xff), line)
 		c.WriteChunk(OpCode(idx>>16), line)
+	default:
+		return -1 // incorrect opcode
 	}
 	return idx
 }

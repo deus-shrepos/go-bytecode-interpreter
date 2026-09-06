@@ -18,6 +18,12 @@ func main() {
 	case "--interactive":
 		r.Cli()
 	case "--path":
+		if os.Args[3] == "--compile-mode" {
+			r.SetMode(repl.CompileMode)
+		}
+		if os.Args[3] == "--compile-debug-mode" {
+			r.SetMode(repl.CompileDebugMode)
+		}
 		r.LoadProgramFromPath(os.Args[2])
 	default:
 		cliHelp()
