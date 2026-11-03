@@ -4,7 +4,7 @@ import (
 	"unsafe"
 )
 
-//go:generate stringer -type=Type
+//go:generate stringer -type=Kind
 type Kind uint8
 
 const (
