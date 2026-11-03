@@ -1,12 +1,10 @@
 package token
 
 import (
-	"fmt"
-	"os"
 	"unsafe"
 )
 
-//go:generate stringer -type=TokenType
+//go:generate stringer -type=Type
 type Kind uint8
 
 const (
@@ -56,7 +54,6 @@ const (
 	TRUE
 	VAR
 	WHILE
-
 	// F-string
 	F_STRING_START
 	F_STRING_MID
@@ -66,30 +63,56 @@ const (
 	EOF
 )
 
+// Token is a span that covers a specific part of the source.
+// It holds the Start <= End <= len(src) invariant, and EOF
+// is the single last token, with Start == End == len(src)
+// All of them counted in bytes
 type Token struct {
-	Start  unsafe.Pointer
-	Length int
-	Line   int
-	Type   Kind
+	Start uint32
+	End   uint32
+	Type  Kind
 }
 
-func NewToken(ttype Kind, start unsafe.Pointer, length int, line int) Token {
+// Diagnostics It will carry the error information so printing
+// does not need the source
+type Diagnostics struct {
+	Start   uint32
+	End     uint32
+	Message string
+}
+
+func NewToken(kind Kind) Token {
 	return Token{
-		Type:   ttype,
-		Start:  start,
-		Length: length,
-		Line:   line,
+		Type: kind,
 	}
 }
 
 func (t Token) Kind() Kind {
 	return t.Type
 }
-func (t Token) Lexeme() string {
-	return unsafe.String((*byte)(t.Start), t.Length)
-}
 
-func (t *Token) Print() {
-	fmt.Fprintf(os.Stdout, "Token[Type=%v, Start=%p, length=%d, line=%d]",
-		t.Type, *(*int)(t.Start), t.Length, t.Line)
+func (t Token) Lexeme(source []byte) string {
+	if t.Len() == 0 {
+		return ""
+	}
+	return unsafe.String(&source[t.Start], t.Len())
+}
+func (t Token) Len() int { return int(t.End - t.Start) }
+
+// FindLineColumn Finds the line and column position using binary search
+func FindLineColumn(lines []uint32, offset uint32) (line, col int) {
+	low := 0
+	high := len(lines)
+	for low < high {
+		mid := low + (high-low)/2
+		if lines[mid] > offset {
+			high = mid
+		} else {
+			low = mid + 1
+		}
+	}
+	index := low - 1
+	line = index + 1
+	col = int(offset - lines[index])
+	return line, col
 }

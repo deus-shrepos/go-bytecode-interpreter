@@ -185,7 +185,44 @@ entry, and a regression gets a new ID that references the old one.
   second space), not two `PLUS` tokens. Confirmed by
   `TestScanToken_SkipWhitespace/spaces` and `/mixed_with_newline`.
 
+### ISSUE-027 — `Reset` after `Release` leaves dirty bytes, breaking `Alloc[T]`'s zero-init promise
+- **Location:** `internals/memory/arena.go:157-162` (`Release`), `:113-123` (`Reset`)
+- **Found:** 2026-10-12, review of `Arena` while designing `Space.Reset`
+- **Detail:** `Alloc[T]`'s doc (arena.go:200) promises memory is zero after
+  `Reset`. But `Release` rewinds `offset` without zeroing, and `Reset` clears
+  only `buf[:offset]`. Repro: Mark at offset 40, allocate and write up to
+  100, Release (offset=40), Reset (clears [0,40)). Bytes [40,100) stay
+  dirty, so the next `Alloc[T]` covering them returns a non-zero T. Fix
+  direction: keep `[offset, end)` always zero by zeroing the abandoned
+  range in `Release`, or track a high-water mark and have `Reset` clear up
+  to it.
+
 ## Fixed
+
+### ISSUE-028 — `isAtEnd` relies on a 0x00 sentinel the source slice doesn't have
+- **Location:** `internals/lexer/scanner.go:293-295` (`isAtEnd`), plus
+  `peek`/`peekNext`/`advance`, which dereference `s.current` via `unsafe`
+- **Found:** 2026-10-29, review while redesigning tokens as offset spans
+- **Detail:** `isAtEnd` returns `*(*byte)(s.current) == 0x00`. Go slices
+  are not NUL-terminated, so unless the caller happened to append `0x00`,
+  `peek()` at end of input reads memory past the slice through an
+  `unsafe.Pointer` — a silent wild read instead of a bounds panic. And a
+  literal `\x00` byte inside the source ends scanning early.
+- **Fixed:** 2026-11-03, 2026-11-03-token-span-and-scanner-rewrite
+
+### ISSUE-029 — f-string `interpMode` bool: unterminated f-strings are silent, nesting mis-scans
+- **Location:** `internals/lexer/scanner.go:56-69` (`case '}'`),
+  `:168-179` (`fstringStart`), `interpMode` field
+- **Found:** 2026-10-29, review while redesigning tokens as offset spans
+- **Detail:** Three faults from one design. (1) If `fstringScan` hits end of
+  input inside the `'}'` case it returns 0, matches neither `'"'` nor `'{'`,
+  and falls through to `RIGHT_BRACE` — an unterminated f-string gets no
+  ERROR. (2) `fstringStart`'s "no `{`" branch calls `advance()` even when
+  `fstringScan` stopped at end of input, stepping past the sentinel. (3) A
+  single bool can't nest: in `f"a{ {1} }b"` the `}` closing the inner brace
+  is taken as closing the hole, and an inner f-string in a hole clears the
+  outer one's state.
+- **Fixed:** 2026-11-03, 2026-11-03-token-span-and-scanner-rewrite
 
 ### ISSUE-022 — `scanner_test.go` still calls the renamed `GetLexme`
 - **Location:** `internals/lexer/scanner_test.go:119,525,630,631,638,639,660,661,690`

@@ -1,43 +1,60 @@
 package lexer
 
 import (
-	"fmt"
+	"bytes"
+
 	"go-bytecode-interpreter/internals/token"
-	"strings"
-	"unsafe"
 )
 
 type Scanner struct {
-	line       int
-	interpMode bool
-	start      unsafe.Pointer
-	current    unsafe.Pointer
-	source     []byte // arena?
+	source []byte
+	lines  []uint32
+	fstack []uint32 // 1 entry per f-string
+	tokens []token.Token
+	diags  []token.Diagnostics
+
+	start   uint32
+	current uint32
 }
 
-func NewScanner(source []byte) *Scanner {
+func newScanner(source []byte) *Scanner {
 	return &Scanner{
-		start:      unsafe.Pointer(&source[0]),
-		current:    unsafe.Pointer(&source[0]),
-		source:     source,
-		line:       1,
-		interpMode: false,
+		source: source,
+		lines:  make([]uint32, 1, bytes.Count(source, []byte{'\n'})+1),
+		tokens: make([]token.Token, 0, len(source)/8+1),
+		diags:  nil,
 	}
 }
 
-func (s *Scanner) ScanToken() token.Token {
+func ScanTokens(source []byte) (tokens []token.Token, line []uint32, diags []token.Diagnostics) {
+	s := newScanner(source)
+	for {
+		kind := s.scanToken()
+		s.EmitToken(kind)
+		if kind == token.EOF {
+			break
+		}
+	}
+	return s.tokens, s.lines, s.diags
+}
+
+func (s *Scanner) scanToken() token.Kind {
 	// scan whitespace and advance
 	s.skipWhiteSpace()
 	// scan the current lexeme (at the start of it)
 	s.start = s.current
 	if s.isAtEnd() {
-		// the sentinel value to stop the compiler
-		return s.makeToken(token.EOF)
+		if s.insideFstring() {
+			s.fstack = s.fstack[:0]
+			return s.ReportError("unterminated f-string")
+		}
+		// the sentinel value to stop the scanner
+		return token.EOF
 	}
 	c := s.advance()
 	if c == 'f' && s.peek() == '"' {
 		s.advance()
-		return s.fstringStart()
+		return s.fstringText(true)
 	}
 	if isAlpha(c) {
 		return s.makeIdentifier()
@@ -48,79 +65,80 @@ func (s *Scanner) ScanToken() token.Token {
 
 	switch c {
 	case '(':
-		return s.makeToken(token.LEFT_PAREN)
+		return token.LEFT_PAREN
 	case ')':
-		return s.makeToken(token.RIGHT_PAREN)
+		return token.RIGHT_PAREN
 	case '{':
-		return s.makeToken(token.LEFT_BRACE)
+		if s.insideFstring() {
+			s.fstack[len(s.fstack)-1]++
+		}
+		return token.LEFT_BRACE
 	case '}':
-		if s.interpMode == true {
-			s.interpMode = false
-			if s.fstringScan() == '"' {
-				s.advance()
-				return s.makeToken(token.F_STRING_END)
+		if s.insideFstring() {
+			topBrace := s.fstack[len(s.fstack)-1]
+			if topBrace == 0 {
+				s.fstack = s.fstack[:len(s.fstack)-1]
+				// parse rest of the string
+				return s.fstringText(false)
 			}
-			if s.fstringScan() == '{' {
-				s.interpMode = true
-				s.advance()
-				return s.makeToken(token.F_STRING_MID)
+			if topBrace > 0 {
+				s.fstack[len(s.fstack)-1]--
+				return token.RIGHT_BRACE
 			}
 		}
-		return s.makeToken(token.RIGHT_BRACE)
+		return token.RIGHT_BRACE
 	case ';':
-		return s.makeToken(token.SEMICOLON)
+		return token.SEMICOLON
 	case ',':
-		return s.makeToken(token.COMMA)
+		return token.COMMA
 	case '.':
-		return s.makeToken(token.DOT)
+		return token.DOT
 	case '-':
-		return s.makeToken(token.MINUS)
+		return token.MINUS
 	case '+':
-		return s.makeToken(token.PLUS)
+		return token.PLUS
 	case '/':
-		return s.makeToken(token.SLASH)
+		return token.SLASH
 	case '*':
-		return s.makeToken(token.STAR)
+		return token.STAR
 	case '!':
 		if s.match('=') {
-			return s.makeToken(token.BANG_EQUAL)
+			return token.BANG_EQUAL
 		} else {
-			return s.makeToken(token.BANG)
+			return token.BANG
 		}
 	case '=':
 		if s.match('=') {
-			return s.makeToken(token.EQUAL_EQUAL)
+			return token.EQUAL_EQUAL
 		} else {
-			return s.makeToken(token.EQUAL)
+			return token.EQUAL
 		}
 
 	case '<':
 		if s.match('=') {
-			return s.makeToken(token.LESS_EQUAL)
+			return token.LESS_EQUAL
 		} else {
-			return s.makeToken(token.LESS)
+			return token.LESS
 		}
 	case '>':
 		if s.match('=') {
-			return s.makeToken(token.GREATER_EQUAL)
+			return token.GREATER_EQUAL
 		} else {
-			return s.makeToken(token.GREATER)
+			return token.GREATER
 		}
 	case '"':
 		return s.string()
-
 	default:
-		return s.errorToken(fmt.Sprintf("Unexpected Token: %q (%d)", c, c))
+		return s.ReportError("Unexpected Token")
 	}
 }
 
-func (s *Scanner) makeToken(ttype token.Kind) token.Token {
-	return token.Token{
-		Type:   ttype,
-		Start:  s.start,
-		Length: (int)(uintptr(unsafe.Add(s.current, -uintptr(s.start)))), // lexeme[n] - lexeme[0]
-		Line:   s.line,
-	}
+func (s *Scanner) EmitToken(kind token.Kind) {
+	s.tokens = append(s.tokens, token.Token{
+		Type:  kind,
+		Start: s.start,
+		End:   s.current,
+	})
 }
 
 func (s *Scanner) skipWhiteSpace() {
@@ -129,11 +147,12 @@ func (s *Scanner) skipWhiteSpace() {
 		// when a whitespace byte is encountered
 		c := s.peek()
 		switch c {
-		case '\t', '\r', ' ':
+		case '\t', '\r', ' ', '\n':
 			s.advance()
-		case '\n':
-			s.line++
-			s.advance()
+		// case '\n':
+		// 	s.advance()
+		// 	s.newLineStarts()
+		// 	continue
 		case '/':
 			if s.peekNext() == '/' {
 				// it's a comment and we consume until we reach newline
@@ -150,45 +169,71 @@ func (s *Scanner) skipWhiteSpace() {
 		}
 	}
 }
-func (s *Scanner) string() token.Token {
+func (s *Scanner) string() token.Kind {
 	for s.peek() != '"' && !s.isAtEnd() {
-		if s.peek() == '\n' {
-			s.line++
+		if s.peek() == '\\' {
+			s.advance()
+			if !s.isAtEnd() {
+				s.advance()
+			}
+			continue
 		}
+
+		// if s.peek() == '\n' {
+		// 	s.advance()
+		// 	continue
+		// }
 		s.advance()
 	}
 
 	if s.isAtEnd() {
-		return s.errorToken("Unterminated string")
+		return s.ReportError("Unterminated string")
+
 	}
 	s.advance() // need to close the qoute
-	return s.makeToken(token.STRING)
+	return token.STRING
 }
 
-func (s *Scanner) fstringStart() token.Token {
-	if s.fstringScan() == '{' {
-		s.interpMode = true
-		s.advance()
-		return s.makeToken(token.F_STRING_START)
-	}
-
-	// in case we don't find any "{}"
-	// we will just parse it as a string
-	s.advance()
-	return s.makeToken(token.F_STRING_END)
-}
-
-func (s *Scanner) fstringScan() byte {
-	for (s.peek() != '"' && s.peek() != '{') && !s.isAtEnd() {
-		if s.peek() == '\n' {
-			s.line++
+func (s *Scanner) fstringText(isFirst bool) token.Kind {
+	for !s.isAtEnd() {
+		if s.peek() == '\\' {
+			s.advance()
+			if !s.isAtEnd() {
+				s.advance()
+			}
+			continue
+		}
+		// if s.peek() == '\n' {
+		// 	s.advance()
+		// 	s.newLineStarts()
+		// 	continue
+		// }
+		if s.peek() == '{' {
+			s.advance()
+			s.fstack = append(s.fstack, 0)
+			if isFirst {
+				return token.F_STRING_START
+			} else {
+				return token.F_STRING_MID
+			}
+		}
+		if s.peek() == '"' {
+			s.advance()
+			return token.F_STRING_END
 		}
 		s.advance()
 	}
-	return s.peek()
+
+	// end of the input
+	return s.ReportError("unterminated f-stirng")
+
 }
 
-func (s *Scanner) makeNumber() token.Token {
+func (s *Scanner) newLineStarts() {
+	s.lines = append(s.lines, s.current)
+}
+
+func (s *Scanner) makeNumber() token.Kind {
 	// find the digit and keep advancing
 	for isDigit(s.peek()) {
 		s.advance()
@@ -201,40 +246,43 @@ func (s *Scanner) makeNumber() token.Token {
 			s.advance()
 		}
 	}
-	return s.makeToken(token.NUMBER)
+	return token.NUMBER
 }
 
-func (s *Scanner) makeIdentifier() token.Token {
+func (s *Scanner) makeIdentifier() token.Kind {
 	for isAlpha(s.peek()) || isDigit(s.peek()) {
 		s.advance()
 	}
-	return s.makeToken(s.identifierType())
+	return s.identifierType()
 }
 
 func (s *Scanner) peek() byte {
-	return *(*byte)(s.current)
-}
-
-func (s *Scanner) peekNext() byte {
 	if s.isAtEnd() {
 		return 0x00
 	}
-	return *(*byte)(unsafe.Add(s.current, 1))
+	return s.source[s.current]
+}
+
+func (s *Scanner) peekNext() byte {
+	if s.isAtEnd() || int(s.current+1) >= len(s.source) {
+		return 0x00
+	}
+	return s.source[s.current+1]
 }
 
 func (s *Scanner) match(b byte) bool {
 	if s.isAtEnd() {
 		return false
 	}
-	if *(*byte)(unsafe.Pointer(s.current)) != b {
+	if s.source[s.current] != b {
 		return false
 	}
-	s.current = unsafe.Add(s.current, 1)
+	s.current = s.current + 1
 	return true
 }
 
 func (s *Scanner) identifierType() token.Kind {
-	switch *(*byte)(s.start) {
+	switch s.source[s.start] {
 	case 'a':
 		return s.checkKeyword(1, 2, "nd", token.AND)
 	case 'c':
@@ -242,14 +290,17 @@ func (s *Scanner) identifierType() token.Kind {
 	case 'e':
 		return s.checkKeyword(1, 3, "lse", token.ELSE)
 	case 'f':
-		next := *(*byte)(unsafe.Add(s.start, 1))
-		switch next {
-		case 'a':
-			return s.checkKeyword(2, 3, "lse", token.FALSE)
-		case 'u':
-			return s.checkKeyword(2, 1, "n", token.FUN)
-		case 'o':
-			return s.checkKeyword(2, 1, "r", token.FOR)
+		// the length of the chars should not exceed 3 bytes
+		if s.current-s.start >= 3 {
+			next := s.source[s.start+1]
+			switch next {
+			case 'a':
+				return s.checkKeyword(2, 3, "lse", token.FALSE)
+			case 'u':
+				return s.checkKeyword(2, 1, "n", token.FUN)
+			case 'o':
+				return s.checkKeyword(2, 1, "r", token.FOR)
+			}
 		}
 	case 'i':
 		return s.checkKeyword(1, 1, "f", token.IF)
@@ -264,12 +315,14 @@ func (s *Scanner) identifierType() token.Kind {
 	case 's':
 		return s.checkKeyword(1, 4, "uper", token.SUPER)
 	case 't':
-		next := *(*byte)(unsafe.Add(s.start, 1))
-		switch next {
-		case 'h':
-			return s.checkKeyword(2, 2, "is", token.THIS)
-		case 'r':
-			return s.checkKeyword(2, 2, "ue", token.TRUE)
+		if s.current-s.start >= 2 {
+			next := s.source[s.start+1]
+			switch next {
+			case 'h':
+				return s.checkKeyword(2, 2, "is", token.THIS)
+			case 'r':
+				return s.checkKeyword(2, 2, "ue", token.TRUE)
+			}
 		}
 	case 'v':
 		return s.checkKeyword(1, 2, "ar", token.VAR)
@@ -280,37 +333,40 @@ func (s *Scanner) identifierType() token.Kind {
 	return token.IDENTIFIER
 }
 
-func (s *Scanner) checkKeyword(start int, length int, rest string, tokenType token.Kind) token.Kind {
+func (s *Scanner) checkKeyword(start uint32, length uint32, rest string, tokenType token.Kind) token.Kind {
 	// check the length and match the strings
 	// we move the s.start to the current start position
-	if (calcPtrDiff(s.start, s.current) == (start + length)) &&
-		(MatchString(unsafe.Add(s.start, start), rest, length) == 0) {
+	if (s.current-s.start == (start + length)) &&
+		bytes.Equal(s.source[s.start+start:s.current], []byte(rest)) {
 		return tokenType
 	}
 	return token.IDENTIFIER
 }
 
 func (s *Scanner) isAtEnd() bool {
-	return *(*byte)(s.current) == 0x00
+	return int(s.current) >= len(s.source)
 }
 
 func (s *Scanner) advance() byte {
-	s.current = unsafe.Add(s.current, 1)
-	return *(*byte)(unsafe.Add(s.current, -1))
-}
-
-func (s *Scanner) errorToken(message string) token.Token {
-	byteString := []byte(message)
-	return token.Token{
-		Type:   token.ERROR,
-		Start:  unsafe.Pointer(&byteString[0]),
-		Length: len(message),
-		Line:   s.line,
+	c := s.source[s.current]
+	s.current++
+	if c == '\n' {
+		s.newLineStarts()
 	}
+	return c
 }
 
-func MatchString(basePtr unsafe.Pointer, rest string, length int) int {
-	return strings.Compare(unsafe.String((*byte)(basePtr), length), rest)
+func (s *Scanner) insideFstring() bool {
+	return len(s.fstack) > 0
+}
+
+func (s *Scanner) ReportError(message string) token.Kind {
+	s.diags = append(s.diags, token.Diagnostics{
+		Start:   s.start,
+		End:     s.current,
+		Message: message,
+	})
+	return token.ERROR
 }
 
 func isAlpha(c byte) bool {
@@ -319,8 +375,4 @@ func isAlpha(c byte) bool {
 
 func isDigit(c byte) bool {
 	return c >= '0' && c <= '9'
-}
-
-func calcPtrDiff(a unsafe.Pointer, b unsafe.Pointer) int {
-	return (int)(uintptr(b) - uintptr(a))
 }

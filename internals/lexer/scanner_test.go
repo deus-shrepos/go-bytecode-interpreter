@@ -1,694 +1,689 @@
 package lexer_test
 
 import (
+	"fmt"
+	"strings"
 	"testing"
 	"time"
-	"unsafe"
 
 	"go-bytecode-interpreter/internals/lexer"
 	"go-bytecode-interpreter/internals/token"
 )
 
-// byteAt safely dereferences a Token.Start pointer as a single byte.
-func byteAt(p unsafe.Pointer) byte {
-	return *(*byte)(p)
-}
+// ---------------------------------------------------------------------------
+// Helpers
+//
+// Every test goes through scan(), so it is the only place that knows the
+// ScanTokens signature. If the signature changes, fix it here.
+// ---------------------------------------------------------------------------
 
-func TestScanToken_SingleCharTokens(t *testing.T) {
-	cases := []struct {
-		name string
-		ch   byte
-		want token.Kind
-	}{
-		{"LEFT_PAREN", '(', token.LEFT_PAREN},
-		{"RIGHT_PAREN", ')', token.RIGHT_PAREN},
-		{"LEFT_BRACE", '{', token.LEFT_BRACE},
-		{"RIGHT_BRACE", '}', token.RIGHT_BRACE},
-		{"COMMA", ',', token.COMMA},
-		{"DOT", '.', token.DOT},
-		{"MINUS", '-', token.MINUS},
-		{"PLUS", '+', token.PLUS},
-		{"SEMICOLON", ';', token.SEMICOLON},
-		{"SLASH", '/', token.SLASH},
-		{"STAR", '*', token.STAR},
-	}
-
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			source := []byte{tc.ch, 0x00}
-			s := lexer.NewScanner(source)
-			tok := s.ScanToken()
-
-			if tok.Type != tc.want {
-				t.Errorf("Type = %v, want %v", tok.Type, tc.want)
-			}
-			if tok.Length != 1 {
-				t.Errorf("Length = %d, want 1", tok.Length)
-			}
-			if got := byteAt(tok.Start); got != tc.ch {
-				t.Errorf("byte at Start = %q, want %q", got, tc.ch)
-			}
-		})
-	}
-}
-
-func TestScanToken_MultiTokenSequence(t *testing.T) {
-	// Mirrors examples/scanner_text.glox: "(+@+)"
-	source := []byte("(+@+)\x00")
-	s := lexer.NewScanner(source)
-
-	want := []token.Kind{
-		token.LEFT_PAREN,
-		token.PLUS,
-		token.ERROR,
-		token.PLUS,
-		token.RIGHT_PAREN,
-	}
-
-	for i, wantType := range want {
-		tok := s.ScanToken()
-		if tok.Type != wantType {
-			t.Fatalf("token %d: Type = %v, want %v", i, tok.Type, wantType)
-		}
-	}
-
-	if tok := s.ScanToken(); tok.Type != token.EOF {
-		t.Errorf("final token Type = %v, want EOF", tok.Type)
-	}
-}
-
-func TestScanToken_EOFOnEmptySource(t *testing.T) {
-	source := []byte{0x00}
-	s := lexer.NewScanner(source)
-
-	tok := s.ScanToken()
-	if tok.Type != token.EOF {
-		t.Errorf("Type = %v, want EOF", tok.Type)
-	}
-}
-
-// TestScanToken_Identifier covers identifier scanning: alpha/underscore
-// start, continuing over alpha/digit/underscore per isAlpha/isDigit in
-// scanner.go.
-func TestScanToken_Identifier(t *testing.T) {
-	cases := []struct {
-		name       string
-		source     string
-		wantLength int
-	}{
-		{"simple", "abc", 3},
-		{"single_letter", "x", 1},
-		{"leading_underscore", "_foo", 4},
-		{"trailing_underscore", "foo_", 4},
-		{"internal_underscore", "foo_bar", 7},
-		{"trailing_digits", "foo123", 6},
-		{"all_underscores", "___", 3},
-	}
-
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			source := append([]byte(tc.source), 0x00)
-			s := lexer.NewScanner(source)
-			tok := s.ScanToken()
-
-			if tok.Type != token.IDENTIFIER {
-				t.Fatalf("Type = %v, want IDENTIFIER", tok.Type)
-			}
-			if tok.Length != tc.wantLength {
-				t.Errorf("Length = %d, want %d", tok.Length, tc.wantLength)
-			}
-			if got := tok.Lexeme(); got != tc.source {
-				t.Errorf("Lexeme() = %q, want %q", got, tc.source)
-			}
-		})
-	}
-}
-
-// TestScanToken_Number covers integer and fractional literals, plus the
-// "trailing dot with no following digit" edge case: makeNumber only
-// consumes the '.' when peekNext() is a digit, so "123." must scan as
-// NUMBER("123") followed by a separate DOT token, not a malformed number.
-func TestScanToken_Number(t *testing.T) {
-	cases := []struct {
-		name       string
-		source     string
-		wantLength int
-	}{
-		{"integer", "123", 3},
-		{"single_digit", "0", 1},
-		{"fractional", "123.456", 7},
-		{"fractional_single_digit", "1.5", 3},
-	}
-
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			source := append([]byte(tc.source), 0x00)
-			s := lexer.NewScanner(source)
-			tok := s.ScanToken()
-
-			if tok.Type != token.NUMBER {
-				t.Fatalf("Type = %v, want NUMBER", tok.Type)
-			}
-			if tok.Length != tc.wantLength {
-				t.Errorf("Length = %d, want %d", tok.Length, tc.wantLength)
-			}
-		})
-	}
-}
-
-func TestScanToken_Number_TrailingDotNotConsumed(t *testing.T) {
-	source := []byte("123.\x00")
-	s := lexer.NewScanner(source)
-
-	numTok := s.ScanToken()
-	if numTok.Type != token.NUMBER {
-		t.Fatalf("first token Type = %v, want NUMBER", numTok.Type)
-	}
-	if numTok.Length != 3 {
-		t.Errorf("first token Length = %d, want 3 (dot not consumed without a following digit)", numTok.Length)
-	}
-
-	dotTok := s.ScanToken()
-	if dotTok.Type != token.DOT {
-		t.Errorf("second token Type = %v, want DOT", dotTok.Type)
-	}
-}
-
-// TestScanToken_Number_MultipleDots mirrors clox/lox behavior: "1.2.3" is
-// NUMBER("1.2"), DOT, NUMBER("3") — a number literal has at most one
-// fractional part, the second '.' starts a fresh scan.
-func TestScanToken_Number_MultipleDots(t *testing.T) {
-	source := []byte("1.2.3\x00")
-	s := lexer.NewScanner(source)
-
-	want := []struct {
-		ttype  token.Kind
-		length int
-	}{
-		{token.NUMBER, 3}, // "1.2"
-		{token.DOT, 1},
-		{token.NUMBER, 1}, // "3"
-	}
-
-	for i, w := range want {
-		tok := s.ScanToken()
-		if tok.Type != w.ttype {
-			t.Fatalf("token %d: Type = %v, want %v", i, tok.Type, w.ttype)
-		}
-		if tok.Length != w.length {
-			t.Errorf("token %d: Length = %d, want %d", i, tok.Length, w.length)
-		}
-	}
-}
-
-// TestScanToken_Keywords asserts every reserved word in the language
-// (token.go's Keywords block) scans to its dedicated Kind rather than
-// IDENTIFIER. Table mirrors clox's keyword set exactly.
-func TestScanToken_Keywords(t *testing.T) {
-	cases := []struct {
-		source string
-		want   token.Kind
-	}{
-		{"and", token.AND},
-		{"class", token.CLASS},
-		{"else", token.ELSE},
-		{"false", token.FALSE},
-		{"for", token.FOR},
-		{"fun", token.FUN},
-		{"if", token.IF},
-		{"nil", token.NIL},
-		{"or", token.OR},
-		{"print", token.PRINT},
-		{"return", token.RETURN},
-		{"super", token.SUPER},
-		{"this", token.THIS},
-		{"true", token.TRUE},
-		{"var", token.VAR},
-		{"while", token.WHILE},
-	}
-
-	for _, tc := range cases {
-		t.Run(tc.source, func(t *testing.T) {
-			source := append([]byte(tc.source), 0x00)
-			s := lexer.NewScanner(source)
-			tok := s.ScanToken()
-
-			if tok.Type != tc.want {
-				t.Errorf("Type = %v, want %v", tok.Type, tc.want)
-			}
-			if tok.Length != len(tc.source) {
-				t.Errorf("Length = %d, want %d", tok.Length, len(tc.source))
-			}
-		})
-	}
-}
-
-// TestScanToken_KeywordLikeIdentifiers is the adversarial counterpart to
-// TestScanToken_Keywords: identifiers that share a keyword's prefix but are
-// longer, or that stop short of a keyword's full spelling, must scan as
-// IDENTIFIER. checkKeyword's job (scanner.go) is exactly this
-// discrimination — it should reject on either a length mismatch or a byte
-// mismatch in the remainder, meaning BOTH conditions must hold for a
-// keyword match, not just one.
-func TestScanToken_KeywordLikeIdentifiers(t *testing.T) {
-	cases := []string{
-		// longer than the keyword, sharing its full prefix
-		"andor", "classroom", "elsewhere", "falsely", "forward",
-		"funny", "iffy", "nile", "orange", "printer", "returning",
-		"superb", "thistle", "truest", "vary", "whiley",
-		// shorter than the keyword, a strict prefix of it
-		"an", "cla", "el", "fal", "fo", "fu", "ni", "pri", "ret",
-		"sup", "th", "tr", "va", "whil",
-		// single letter, just the switch discriminator itself
-		"a", "c", "e", "f", "i", "n", "o", "p", "r", "s", "t", "v", "w",
-		// keyword text with a trailing digit/underscore (still one identifier)
-		"class1", "var_",
-	}
-
-	for _, src := range cases {
-		t.Run(src, func(t *testing.T) {
-			source := append([]byte(src), 0x00)
-			s := lexer.NewScanner(source)
-			tok := s.ScanToken()
-
-			if tok.Type != token.IDENTIFIER {
-				t.Errorf("source %q: Type = %v, want IDENTIFIER", src, tok.Type)
-			}
-			if tok.Length != len(src) {
-				t.Errorf("source %q: Length = %d, want %d", src, tok.Length, len(src))
-			}
-		})
-	}
-}
-
-// TestScanToken_KeywordCaseSensitivity asserts keyword matching is
-// lowercase-only, per the literal switch cases in identifierType.
-func TestScanToken_KeywordCaseSensitivity(t *testing.T) {
-	cases := []string{"AND", "And", "TRUE", "Nil"}
-
-	for _, src := range cases {
-		t.Run(src, func(t *testing.T) {
-			source := append([]byte(src), 0x00)
-			s := lexer.NewScanner(source)
-			tok := s.ScanToken()
-
-			if tok.Type != token.IDENTIFIER {
-				t.Errorf("source %q: Type = %v, want IDENTIFIER (keywords are lowercase-only)", src, tok.Type)
-			}
-		})
-	}
-}
-
-func TestScanToken_TwoCharOperators(t *testing.T) {
-	cases := []struct {
-		name       string
-		source     string
-		wantType   token.Kind
-		wantLength int
-	}{
-		{"BANG", "!", token.BANG, 1},
-		{"BANG_EQUAL", "!=", token.BANG_EQUAL, 2},
-		{"EQUAL", "=", token.EQUAL, 1},
-		{"EQUAL_EQUAL", "==", token.EQUAL_EQUAL, 2},
-		{"LESS", "<", token.LESS, 1},
-		{"LESS_EQUAL", "<=", token.LESS_EQUAL, 2},
-		{"GREATER", ">", token.GREATER, 1},
-		{"GREATER_EQUAL", ">=", token.GREATER_EQUAL, 2},
-	}
-
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			source := append([]byte(tc.source), 0x00)
-			s := lexer.NewScanner(source)
-			tok := s.ScanToken()
-
-			if tok.Type != tc.wantType {
-				t.Errorf("Type = %v, want %v", tok.Type, tc.wantType)
-			}
-			if tok.Length != tc.wantLength {
-				t.Errorf("Length = %d, want %d", tok.Length, tc.wantLength)
-			}
-		})
-	}
-}
-
-func TestScanToken_String(t *testing.T) {
-	cases := []struct {
-		name       string
-		source     string
-		wantLength int
-	}{
-		{"basic", "\"abc\"", 5},
-		{"empty", "\"\"", 2},
-	}
-
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			source := append([]byte(tc.source), 0x00)
-			s := lexer.NewScanner(source)
-			tok := s.ScanToken()
-
-			if tok.Type != token.STRING {
-				t.Errorf("Type = %v, want STRING", tok.Type)
-			}
-			if tok.Length != tc.wantLength {
-				t.Errorf("Length = %d, want %d", tok.Length, tc.wantLength)
-			}
-			if got := byteAt(tok.Start); got != '"' {
-				t.Errorf("byte at Start = %q, want opening quote", got)
-			}
-		})
-	}
-}
-
-// TestScanToken_String_Unterminated asserts a string with no closing quote
-// is reported as ERROR: string() now checks isAtEnd() before the closing
-// advance() and returns errorToken in that case.
-func TestScanToken_String_Unterminated(t *testing.T) {
-	source := []byte("\"abc\x00")
-	s := lexer.NewScanner(source)
-	tok := s.ScanToken()
-
-	if tok.Type != token.ERROR {
-		t.Errorf("Type = %v, want ERROR (unterminated string)", tok.Type)
-	}
-}
-
-// TestScanToken_String_UnterminatedAcrossNewlines asserts the same for a
-// multi-line unterminated string, exercising the line++ branch inside the
-// same unterminated scan.
-func TestScanToken_String_UnterminatedAcrossNewlines(t *testing.T) {
-	source := []byte("\"abc\ndef\x00")
-	s := lexer.NewScanner(source)
-	tok := s.ScanToken()
-
-	if tok.Type != token.ERROR {
-		t.Errorf("Type = %v, want ERROR (unterminated string)", tok.Type)
-	}
-}
-
-// TestScanToken_String_MultilineTerminated asserts a closed string spanning
-// multiple lines scans as STRING. makeToken() stamps Line from s.line at the
-// point it's called — after the whole lexeme, including internal newlines,
-// has been consumed — so the string token's Line reflects its closing
-// quote's line, not its opening quote's line. Matches clox: line tracking
-// is a side effect of advance(), not a snapshot taken at token start.
-func TestScanToken_String_MultilineTerminated(t *testing.T) {
-	source := []byte("\"line1\nline2\"\n+\x00")
-	s := lexer.NewScanner(source)
-
-	strTok := s.ScanToken()
-	if strTok.Type != token.STRING {
-		t.Fatalf("Type = %v, want STRING", strTok.Type)
-	}
-	if strTok.Line != 2 {
-		t.Errorf("string token Line = %d, want 2 (line of the closing quote, not the opening one)", strTok.Line)
-	}
-
-	plusTok := s.ScanToken()
-	if plusTok.Type != token.PLUS {
-		t.Fatalf("Type = %v, want PLUS", plusTok.Type)
-	}
-	if plusTok.Line != 3 {
-		t.Errorf("plus token Line = %d, want 3", plusTok.Line)
-	}
-}
-
-// scanTokenWithTimeout calls s.ScanToken() on a goroutine and fails the test
-// (instead of hanging the whole `go test` run) if it doesn't return in time.
-// Needed because skipWhiteSpace's `case '\t':` and `case '\r':` bodies are
-// empty in scanner.go today — an empty Go case does NOT fall through to the
-// next case (unlike C), so it just exits the switch without calling
-// advance(). The enclosing `for { ... }` in skipWhiteSpace then re-peeks the
-// same byte forever: scanning a literal tab or '\r' spins CPU indefinitely.
-func scanTokenWithTimeout(t *testing.T, s *lexer.Scanner) token.Token {
-	t.Helper()
-	done := make(chan token.Token, 1)
-	go func() { done <- s.ScanToken() }()
-	select {
-	case tok := <-done:
-		return tok
-	case <-time.After(2 * time.Second):
-		t.Fatalf("ScanToken did not return within 2s — skipWhiteSpace is likely stuck in an infinite loop on this input (see the empty '\\t'/'\\r' cases in scanner.go)")
-		return token.Token{}
-	}
-}
-
-// TestScanToken_SkipWhitespace asserts that runs of whitespace (not just a
-// single whitespace byte) are fully skipped between tokens. Uses
-// scanTokenWithTimeout because tab/'\r' input is known to hang the scanner
-// today (see that helper's comment) — this test documents the hang as a
-// failure rather than letting it block the whole suite.
-func TestScanToken_SkipWhitespace(t *testing.T) {
-	cases := []struct {
-		name   string
-		source string
-	}{
-		{"spaces", "+  +\x00"},
-		{"tabs", "+\t\t+\x00"},
-		{"carriage_return", "+\r\r+\x00"},
-		{"mixed_with_newline", "+ \n +\x00"},
-	}
-
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			s := lexer.NewScanner([]byte(tc.source))
-
-			first := scanTokenWithTimeout(t, s)
-			if first.Type != token.PLUS {
-				t.Fatalf("first token Type = %v, want PLUS", first.Type)
-			}
-			second := scanTokenWithTimeout(t, s)
-			if second.Type != token.PLUS {
-				t.Fatalf("second token Type = %v, want PLUS (whitespace run not fully skipped)", second.Type)
-			}
-		})
-	}
-}
-
-func TestScanToken_SkipComment(t *testing.T) {
-	source := []byte("// a comment\n+\x00")
-	s := lexer.NewScanner(source)
-
-	tok := s.ScanToken()
-	if tok.Type != token.PLUS {
-		t.Errorf("Type = %v, want PLUS (comment not fully skipped)", tok.Type)
-	}
-}
-
-// TestScanToken_LineTracking asserts that each token's Line field reflects
-// the source line it was scanned on, for both ordinary tokens (makeToken)
-// and error tokens (errorToken).
-func TestScanToken_LineTracking(t *testing.T) {
-	source := []byte("+\n+\n+\x00")
-	s := lexer.NewScanner(source)
-
-	wantLines := []int{1, 2, 3}
-	for i, wantLine := range wantLines {
-		tok := s.ScanToken()
-		if tok.Type != token.PLUS {
-			t.Fatalf("token %d: Type = %v, want PLUS", i, tok.Type)
-		}
-		if tok.Line != wantLine {
-			t.Errorf("token %d: Line = %d, want %d", i, tok.Line, wantLine)
-		}
-	}
-
-	errSource := []byte("\n\n@\x00")
-	errScanner := lexer.NewScanner(errSource)
-	errTok := errScanner.ScanToken()
-	if errTok.Type != token.ERROR {
-		t.Fatalf("Type = %v, want ERROR", errTok.Type)
-	}
-	if errTok.Line != 3 {
-		t.Errorf("errorToken Line = %d, want 3", errTok.Line)
-	}
-}
-
-// fstringSeq is one expected (Type, lexeme) pair in an f-string token
-// sequence. lexeme is asserted via Token.Lexeme() (the same accessor
-// compiler.go uses to print scan errors) rather than manual length/byte
-// counting, since f-string lexemes have irregular boundaries (they include
-// the '}'/'"' that closes the *previous* segment).
-type fstringSeq struct {
-	typ    token.Kind
+// tk is one expected token: its kind and its exact text in the source.
+type tk struct {
+	kind   token.Kind
 	lexeme string
 }
 
-func assertFStringSequence(t *testing.T, source string, want []fstringSeq) {
+func (t tk) String() string { return fmt.Sprintf("%v %q", t.kind, t.lexeme) }
+
+type result struct {
+	src        []byte
+	toks       []token.Token
+	lineStarts []uint32
+	diags      []token.Diagnostics
+}
+
+// scan runs the scanner with a timeout, so a scanner stuck in a loop fails
+// the test instead of hanging the whole `go test` run.
+func scan(t *testing.T, src string) result {
 	t.Helper()
-	s := lexer.NewScanner([]byte(source + "\x00"))
-	for i, w := range want {
-		tok := s.ScanToken()
-		if tok.Type != w.typ {
-			t.Fatalf("token %d: Type = %v, want %v", i, tok.Type, w.typ)
+	done := make(chan result, 1)
+	go func() {
+		b := []byte(src) // note: no trailing 0x00 sentinel
+		toks, lines, diags := lexer.ScanTokens(b)
+		done <- result{b, toks, lines, diags}
+	}()
+	select {
+	case r := <-done:
+		return r
+	case <-time.After(2 * time.Second):
+		t.Fatalf("ScanTokens(%q) did not return within 2s (infinite loop?)", src)
+		return result{}
+	}
+}
+
+// got converts scanned tokens into (kind, lexeme) pairs for comparison.
+func (r result) got() []tk {
+	out := make([]tk, len(r.toks))
+	for i, tok := range r.toks {
+		out[i] = tk{tok.Type, tok.Lexeme(r.src)}
+	}
+	return out
+}
+
+// expectTokens scans src and checks the full token stream, EOF included.
+func expectTokens(t *testing.T, src string, want ...tk) result {
+	t.Helper()
+	r := scan(t, src)
+	want = append(want, tk{token.EOF, ""})
+	got := r.got()
+
+	if len(got) != len(want) {
+		t.Fatalf("source %q:\n got  %d tokens: %v\n want %d tokens: %v",
+			src, len(got), got, len(want), want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("source %q: token %d = %v, want %v", src, i, got[i], want[i])
 		}
-		if got := tok.Lexeme(); got != w.lexeme {
-			t.Fatalf("token %d: lexeme = %q, want %q", i, got, w.lexeme)
+	}
+	return r
+}
+
+// lineOf returns the 1-based line of token i.
+func (r result) lineOf(i int) int {
+	line, _ := token.FindLineColumn(r.lineStarts, r.toks[i].Start)
+	return line
+}
+
+// ---------------------------------------------------------------------------
+// Invariants that must hold for ANY input
+// ---------------------------------------------------------------------------
+
+// Sources covering every scanner path, valid and invalid.
+var invariantSources = []string{
+	"",
+	"   ",
+	"(+@+)",
+	"let x = 1.5;\nprint x;",
+	`"abc`,
+	"\"a\nb\"",
+	`f"a {b} c"`,
+	`f"abc`,
+	"// only a comment",
+	"a\x00b",
+	"\"a\n",      // unterminated, newline is the last byte
+	"f\"a\n",     // same for an f-string
+	`"abc\`,      // backslash is the last byte
+	`f"{x}" }`,   // stray '}' after a closed f-string
+	"\"\n\n\"",   // consecutive newlines inside a string
+	`f"{ "}" }"`, // string inside a hole
+}
+
+func TestInvariants(t *testing.T) {
+	for _, src := range invariantSources {
+		t.Run(fmt.Sprintf("%q", src), func(t *testing.T) {
+			r := scan(t, src)
+			n := uint32(len(src))
+
+			// Exactly one EOF, last, empty, at len(src).
+			if len(r.toks) == 0 {
+				t.Fatal("no tokens; want at least EOF")
+			}
+			last := r.toks[len(r.toks)-1]
+			if last.Type != token.EOF || last.Start != n || last.End != n {
+				t.Errorf("last token = %v [%d,%d), want EOF [%d,%d)",
+					last.Type, last.Start, last.End, n, n)
+			}
+
+			prevEnd := uint32(0)
+			errorTokens := 0
+			for i, tok := range r.toks {
+				if i < len(r.toks)-1 && tok.Type == token.EOF {
+					t.Errorf("token %d is EOF but is not last", i)
+				}
+				if !(tok.Start <= tok.End && tok.End <= n) {
+					t.Errorf("token %d span [%d,%d) breaks Start <= End <= len(src)=%d",
+						i, tok.Start, tok.End, n)
+				}
+				if tok.Start < prevEnd {
+					t.Errorf("token %d starts at %d, overlapping the previous token (ends %d)",
+						i, tok.Start, prevEnd)
+				}
+				prevEnd = tok.End
+				if tok.Type == token.ERROR {
+					errorTokens++
+				}
+			}
+
+			// Every ERROR token has exactly one diagnostic, and vice versa.
+			if errorTokens != len(r.diags) {
+				t.Errorf("%d ERROR tokens but %d diagnostics", errorTokens, len(r.diags))
+			}
+
+			// lineStarts always begins with 0.
+			if len(r.lineStarts) == 0 || r.lineStarts[0] != 0 {
+				t.Errorf("lineStarts = %v, want it to start with 0", r.lineStarts)
+			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Cursor / end-of-input
+// ---------------------------------------------------------------------------
+
+func TestEmptySource(t *testing.T) {
+	expectTokens(t, "")
+}
+
+func TestWhitespaceOnly(t *testing.T) {
+	expectTokens(t, " \t\r\n ")
+}
+
+// The source has no 0x00 sentinel any more: the end is len(src).
+// A single-byte source must not read past the slice.
+func TestNoSentinelNeeded(t *testing.T) {
+	expectTokens(t, "(", tk{token.LEFT_PAREN, "("})
+}
+
+// A NUL byte in the source is just a bad byte, not the end of input.
+// Scanning must continue past it.
+func TestEmbeddedNulIsNotEnd(t *testing.T) {
+	expectTokens(t, "a\x00b",
+		tk{token.IDENTIFIER, "a"},
+		tk{token.ERROR, "\x00"},
+		tk{token.IDENTIFIER, "b"},
+	)
+}
+
+// ---------------------------------------------------------------------------
+// Punctuation and operators
+// ---------------------------------------------------------------------------
+
+func TestSingleCharTokens(t *testing.T) {
+	cases := []tk{
+		{token.LEFT_PAREN, "("},
+		{token.RIGHT_PAREN, ")"},
+		{token.LEFT_BRACE, "{"},
+		{token.RIGHT_BRACE, "}"},
+		{token.COMMA, ","},
+		{token.DOT, "."},
+		{token.MINUS, "-"},
+		{token.PLUS, "+"},
+		{token.SEMICOLON, ";"},
+		{token.SLASH, "/"},
+		{token.STAR, "*"},
+	}
+	for _, c := range cases {
+		t.Run(c.lexeme, func(t *testing.T) {
+			expectTokens(t, c.lexeme, c)
+		})
+	}
+}
+
+func TestOneOrTwoCharOperators(t *testing.T) {
+	cases := []tk{
+		{token.BANG, "!"},
+		{token.BANG_EQUAL, "!="},
+		{token.EQUAL, "="},
+		{token.EQUAL_EQUAL, "=="},
+		{token.LESS, "<"},
+		{token.LESS_EQUAL, "<="},
+		{token.GREATER, ">"},
+		{token.GREATER_EQUAL, ">="},
+	}
+	for _, c := range cases {
+		t.Run(c.lexeme, func(t *testing.T) {
+			expectTokens(t, c.lexeme, c)
+		})
+	}
+}
+
+// "===" is "==" then "=": match() takes at most one extra byte.
+func TestOperatorGreedyOnce(t *testing.T) {
+	expectTokens(t, "===",
+		tk{token.EQUAL_EQUAL, "=="},
+		tk{token.EQUAL, "="},
+	)
+}
+
+// ---------------------------------------------------------------------------
+// Identifiers and keywords
+// ---------------------------------------------------------------------------
+
+func TestIdentifiers(t *testing.T) {
+	for _, src := range []string{
+		"x", "abc", "_foo", "foo_", "foo_bar", "foo123", "___",
+	} {
+		t.Run(src, func(t *testing.T) {
+			expectTokens(t, src, tk{token.IDENTIFIER, src})
+		})
+	}
+}
+
+func TestKeywords(t *testing.T) {
+	cases := []tk{
+		{token.AND, "and"},
+		{token.CLASS, "class"},
+		{token.ELSE, "else"},
+		{token.FALSE, "false"},
+		{token.FOR, "for"},
+		{token.FUN, "fun"},
+		{token.IF, "if"},
+		{token.NIL, "nil"},
+		{token.OR, "or"},
+		{token.PRINT, "print"},
+		{token.RETURN, "return"},
+		{token.SUPER, "super"},
+		{token.THIS, "this"},
+		{token.TRUE, "true"},
+		{token.VAR, "var"},
+		{token.WHILE, "while"},
+	}
+	for _, c := range cases {
+		t.Run(c.lexeme, func(t *testing.T) {
+			expectTokens(t, c.lexeme, c)
+		})
+	}
+}
+
+// Words that look like keywords but are not: longer, shorter, a single
+// letter, or wrong case. All must be IDENTIFIER.
+func TestKeywordLookalikes(t *testing.T) {
+	cases := []string{
+		// longer than a keyword
+		"andor", "classroom", "elsewhere", "falsely", "forward",
+		"funny", "iffy", "nile", "orange", "printer", "returning",
+		"superb", "thistle", "truest", "vary", "whiley", "class1", "var_",
+		// shorter than a keyword
+		"an", "cla", "el", "fal", "fo", "fu", "ni", "pri", "ret",
+		"sup", "th", "tr", "va", "whil",
+		// single letters
+		"a", "c", "e", "f", "i", "n", "o", "p", "r", "s", "t", "v", "w",
+		// keywords are lowercase only
+		"AND", "And", "TRUE", "Nil",
+	}
+	for _, src := range cases {
+		t.Run(src, func(t *testing.T) {
+			expectTokens(t, src, tk{token.IDENTIFIER, src})
+		})
+	}
+}
+
+// A keyword in the middle of the source, not at offset 0. Catches keyword
+// checks that slice from 0 instead of from the token's start.
+func TestKeywordNotAtStart(t *testing.T) {
+	expectTokens(t, "x and y",
+		tk{token.IDENTIFIER, "x"},
+		tk{token.AND, "and"},
+		tk{token.IDENTIFIER, "y"},
+	)
+}
+
+// ---------------------------------------------------------------------------
+// Numbers
+// ---------------------------------------------------------------------------
+
+func TestNumbers(t *testing.T) {
+	for _, src := range []string{"0", "123", "1.5", "123.456"} {
+		t.Run(src, func(t *testing.T) {
+			expectTokens(t, src, tk{token.NUMBER, src})
+		})
+	}
+}
+
+// The '.' is only part of the number when a digit follows it.
+func TestNumberTrailingDot(t *testing.T) {
+	expectTokens(t, "123.",
+		tk{token.NUMBER, "123"},
+		tk{token.DOT, "."},
+	)
+}
+
+// A number has at most one fractional part.
+func TestNumberMultipleDots(t *testing.T) {
+	expectTokens(t, "1.2.3",
+		tk{token.NUMBER, "1.2"},
+		tk{token.DOT, "."},
+		tk{token.NUMBER, "3"},
+	)
+}
+
+// ---------------------------------------------------------------------------
+// Strings
+// ---------------------------------------------------------------------------
+
+func TestStrings(t *testing.T) {
+	for _, src := range []string{`"abc"`, `""`, "\"line1\nline2\""} {
+		t.Run(src, func(t *testing.T) {
+			expectTokens(t, src, tk{token.STRING, src})
+		})
+	}
+}
+
+// An escaped quote does not end the string. The scanner only skips over
+// escapes; decoding them happens later, when building the AST.
+func TestStringEscapedQuote(t *testing.T) {
+	expectTokens(t, `"a\"b"`, tk{token.STRING, `"a\"b"`})
+}
+
+// An unterminated string is one ERROR token spanning from the opening
+// quote to the end of the source, plus one diagnostic with the same span.
+func TestStringUnterminated(t *testing.T) {
+	for _, src := range []string{`"abc`, "\"abc\ndef"} {
+		t.Run(src, func(t *testing.T) {
+			r := expectTokens(t, src, tk{token.ERROR, src})
+			expectOneDiagnostic(t, r, 0, uint32(len(src)))
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Whitespace and comments
+// ---------------------------------------------------------------------------
+
+func TestWhitespaceBetweenTokens(t *testing.T) {
+	for _, src := range []string{"+  +", "+\t\t+", "+\r\r+", "+ \n +"} {
+		t.Run(fmt.Sprintf("%q", src), func(t *testing.T) {
+			expectTokens(t, src, tk{token.PLUS, "+"}, tk{token.PLUS, "+"})
+		})
+	}
+}
+
+func TestComments(t *testing.T) {
+	expectTokens(t, "// a comment\n+", tk{token.PLUS, "+"})
+	expectTokens(t, "+ // trailing comment", tk{token.PLUS, "+"})
+	expectTokens(t, "// comment with no newline at the end")
+}
+
+// ---------------------------------------------------------------------------
+// Errors
+// ---------------------------------------------------------------------------
+
+// expectOneDiagnostic checks there is exactly one diagnostic, with the
+// given span and a non-empty message.
+func expectOneDiagnostic(t *testing.T, r result, start, end uint32) {
+	t.Helper()
+	if len(r.diags) != 1 {
+		t.Fatalf("got %d diagnostics, want 1: %+v", len(r.diags), r.diags)
+	}
+	d := r.diags[0]
+	if d.Start != start || d.End != end {
+		t.Errorf("diagnostic span = [%d,%d), want [%d,%d)", d.Start, d.End, start, end)
+	}
+	if strings.TrimSpace(d.Message) == "" {
+		t.Error("diagnostic has an empty message")
+	}
+}
+
+// An unexpected byte becomes an ERROR token covering just that byte, and
+// scanning continues afterwards.
+func TestUnexpectedByte(t *testing.T) {
+	r := expectTokens(t, "(+@+)",
+		tk{token.LEFT_PAREN, "("},
+		tk{token.PLUS, "+"},
+		tk{token.ERROR, "@"},
+		tk{token.PLUS, "+"},
+		tk{token.RIGHT_PAREN, ")"},
+	)
+	expectOneDiagnostic(t, r, 2, 3)
+}
+
+func TestSeveralErrorsAllReported(t *testing.T) {
+	r := expectTokens(t, "@ # $",
+		tk{token.ERROR, "@"},
+		tk{token.ERROR, "#"},
+		tk{token.ERROR, "$"},
+	)
+	if len(r.diags) != 3 {
+		t.Errorf("got %d diagnostics, want 3", len(r.diags))
+	}
+}
+
+func TestValidSourceHasNoDiagnostics(t *testing.T) {
+	r := scan(t, "var x = (1 + 2.5) * y;")
+	if len(r.diags) != 0 {
+		t.Errorf("got diagnostics for valid source: %+v", r.diags)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Line tracking (lineStarts)
+// ---------------------------------------------------------------------------
+
+func TestLineStarts(t *testing.T) {
+	cases := []struct {
+		src  string
+		want []uint32
+	}{
+		{"", []uint32{0}},
+		{"abc", []uint32{0}},
+		{"a\nb\n", []uint32{0, 2, 4}},
+		{"\n\n", []uint32{0, 1, 2}},
+		{"// comment\nx", []uint32{0, 11}},    // newline ending a comment
+		{"\"a\nb\"\nx", []uint32{0, 3, 6}},    // newline inside a string
+		{"f\"a\n{x}\"\ny", []uint32{0, 4, 9}}, // newline inside f-string text
+		{"\"\n\n\"", []uint32{0, 2, 3}},       // two newlines in a row, string
+		{"f\"\n\n\"", []uint32{0, 3, 4}},      // two newlines in a row, f-string
+		{"\"a\\\nb\"", []uint32{0, 4}},        // escaped newline in a string
+		{"f\"a\\\nb\"", []uint32{0, 5}},       // escaped newline in an f-string
+	}
+	for _, c := range cases {
+		t.Run(fmt.Sprintf("%q", c.src), func(t *testing.T) {
+			r := scan(t, c.src)
+			if fmt.Sprint(r.lineStarts) != fmt.Sprint(c.want) {
+				t.Errorf("lineStarts = %v, want %v", r.lineStarts, c.want)
+			}
+		})
+	}
+}
+
+func TestTokenLines(t *testing.T) {
+	r := expectTokens(t, "+\n+\n\n@",
+		tk{token.PLUS, "+"},
+		tk{token.PLUS, "+"},
+		tk{token.ERROR, "@"},
+	)
+	for i, want := range []int{1, 2, 4} {
+		if got := r.lineOf(i); got != want {
+			t.Errorf("token %d is on line %d, want %d", i, got, want)
 		}
 	}
-	if tok := s.ScanToken(); tok.Type != token.EOF {
-		t.Errorf("final token Type = %v, want EOF", tok.Type)
+}
+
+// A token's position is where it STARTS. A string spanning lines 1-2 is on
+// line 1, and the token after it is on line 3.
+func TestMultilineStringPosition(t *testing.T) {
+	r := expectTokens(t, "\"line1\nline2\"\n+",
+		tk{token.STRING, "\"line1\nline2\""},
+		tk{token.PLUS, "+"},
+	)
+	if got := r.lineOf(0); got != 1 {
+		t.Errorf("string is on line %d, want 1 (the line it starts on)", got)
+	}
+	if got := r.lineOf(1); got != 3 {
+		t.Errorf("'+' is on line %d, want 3", got)
 	}
 }
 
-// TestScanToken_FString_NoInterpolation asserts an f-string with no "{"
-// short-circuits straight to F_STRING_END (fstringStart, scanner.go:167-178)
-// — no F_STRING_START is emitted for a plain f-string.
-func TestScanToken_FString_NoInterpolation(t *testing.T) {
-	assertFStringSequence(t, `f"hello"`, []fstringSeq{
-		{token.F_STRING_END, `f"hello"`},
-	})
-}
-
-// TestScanToken_FString_SingleInterpolation covers the three-token scheme:
-// F_STRING_START carries the literal prefix through the opening "{", the
-// embedded expression is scanned as ordinary tokens (just IDENTIFIER here),
-// and F_STRING_END carries the closing "}" through the closing quote.
-func TestScanToken_FString_SingleInterpolation(t *testing.T) {
-	assertFStringSequence(t, `f"a {b} c"`, []fstringSeq{
-		{token.F_STRING_START, `f"a {`},
-		{token.IDENTIFIER, `b`},
-		{token.F_STRING_END, `} c"`},
-	})
-}
-
-// TestScanToken_FString_MultipleInterpolations mirrors the shape of
-// examples/scanner_text.glox: repeated interpolations produce F_STRING_MID
-// segments between F_STRING_START and F_STRING_END, each spanning from the
-// closing "}" of one interpolation to the opening "{" of the next.
-func TestScanToken_FString_MultipleInterpolations(t *testing.T) {
-	assertFStringSequence(t, `f"this {foo} text {bar} more {baz} end"`, []fstringSeq{
-		{token.F_STRING_START, `f"this {`},
-		{token.IDENTIFIER, `foo`},
-		{token.F_STRING_MID, `} text {`},
-		{token.IDENTIFIER, `bar`},
-		{token.F_STRING_MID, `} more {`},
-		{token.IDENTIFIER, `baz`},
-		{token.F_STRING_END, `} end"`},
-	})
-}
-
-// TestScanToken_FString_EmptyInterpolation asserts "{}" with nothing inside
-// produces F_STRING_START immediately followed by F_STRING_END — no
-// IDENTIFIER/RIGHT_BRACE token represents the empty gap. This also confirms
-// the interpMode-gated '}' branch (scanner.go:55-69) doesn't misfire into
-// plain RIGHT_BRACE handling when the brace immediately follows another
-// brace.
-func TestScanToken_FString_EmptyInterpolation(t *testing.T) {
-	assertFStringSequence(t, `f"{}"`, []fstringSeq{
-		{token.F_STRING_START, `f"{`},
-		{token.F_STRING_END, `}"`},
-	})
-}
-
-// TestScanToken_FString_Multiline asserts s.line (incremented inside
-// fstringScan, scanner.go:180-188) advances correctly across newlines in
-// both the literal-prefix scan (inside fstringStart) and the literal-suffix
-// scan (inside the '}' case). Per the Line-timing convention established by
-// TestScanToken_String_MultilineTerminated, each token's Line reflects the
-// line *after* its full lexeme (including any newlines inside it) has been
-// consumed.
-func TestScanToken_FString_Multiline(t *testing.T) {
-	source := "f\"a\nb {x} c\nd\"\x00"
-	s := lexer.NewScanner([]byte(source))
-
-	startTok := s.ScanToken()
-	if startTok.Type != token.F_STRING_START {
-		t.Fatalf("Type = %v, want F_STRING_START", startTok.Type)
-	}
-	if startTok.Line != 2 {
-		t.Errorf("F_STRING_START Line = %d, want 2", startTok.Line)
-	}
-
-	idTok := s.ScanToken()
-	if idTok.Type != token.IDENTIFIER {
-		t.Fatalf("Type = %v, want IDENTIFIER", idTok.Type)
-	}
-	if idTok.Line != 2 {
-		t.Errorf("IDENTIFIER Line = %d, want 2", idTok.Line)
-	}
-
-	endTok := s.ScanToken()
-	if endTok.Type != token.F_STRING_END {
-		t.Fatalf("Type = %v, want F_STRING_END", endTok.Type)
-	}
-	if endTok.Line != 3 {
-		t.Errorf("F_STRING_END Line = %d, want 3", endTok.Line)
-	}
-}
-
-// TestScanToken_FString_AdjacentFIdentifier pins the exact adjacency
-// requirement of the `c == 'f' && s.peek() == '"'` f-string check
-// (scanner.go:37-40): only a '"' immediately following 'f' (no whitespace)
-// triggers f-string scanning. `f + "str"` must scan as the identifier `f`,
-// not misfire into fstringStart.
-func TestScanToken_FString_AdjacentFIdentifier(t *testing.T) {
-	source := []byte(`f + "str"` + "\x00")
-	s := lexer.NewScanner(source)
-
-	idTok := s.ScanToken()
-	if idTok.Type != token.IDENTIFIER || idTok.Lexeme() != "f" {
-		t.Fatalf("token 0 = (%v, %q), want (IDENTIFIER, \"f\")", idTok.Type, idTok.Lexeme())
-	}
-	plusTok := s.ScanToken()
-	if plusTok.Type != token.PLUS {
-		t.Fatalf("token 1: Type = %v, want PLUS", plusTok.Type)
-	}
-	strTok := s.ScanToken()
-	if strTok.Type != token.STRING || strTok.Lexeme() != `"str"` {
-		t.Fatalf("token 2 = (%v, %q), want (STRING, %q)", strTok.Type, strTok.Lexeme(), `"str"`)
-	}
-}
-
-// TestScanToken_FString_UnterminatedMidInterpolation documents that an
-// f-string left open inside an interpolation (no closing '}') does NOT
-// produce an ERROR token the way an unterminated plain string does
-// (TestScanToken_String_Unterminated) — it just scans the embedded
-// expression's tokens and then hits EOF normally on the next ScanToken()
-// call, silently leaving interpMode stuck at true. Uses
-// scanTokenWithTimeout defensively; this path is expected to terminate,
-// but an unverified interpMode state is exactly the kind of thing that
-// could hang a future change to the '}' handling.
-func TestScanToken_FString_UnterminatedMidInterpolation(t *testing.T) {
-	s := lexer.NewScanner([]byte(`f"abc {expr` + "\x00"))
-
-	startTok := scanTokenWithTimeout(t, s)
-	if startTok.Type != token.F_STRING_START {
-		t.Fatalf("Type = %v, want F_STRING_START", startTok.Type)
-	}
-	idTok := scanTokenWithTimeout(t, s)
-	if idTok.Type != token.IDENTIFIER || idTok.Lexeme() != "expr" {
-		t.Fatalf("token = (%v, %q), want (IDENTIFIER, \"expr\")", idTok.Type, idTok.Lexeme())
-	}
-	eofTok := scanTokenWithTimeout(t, s)
-	if eofTok.Type != token.EOF {
-		t.Errorf("Type = %v, want EOF (no ERROR token for an f-string left open mid-interpolation)", eofTok.Type)
-	}
-}
-
-// TestScanToken_FString_UnterminatedNoClose documents a scanner-cursor bug:
-// an f-string with no '{' AND no closing '"' (EOF reached inside
-// fstringScan, scanner.go:180-188) falls into fstringStart's "no {}"
-// branch (scanner.go:174-177), which unconditionally calls advance() —
-// even though fstringScan stopped on isAtEnd(), not on a real '"'. That
-// advance() walks s.current one byte past the source's 0x00 sentinel, and
-// the returned token is wrongly typed F_STRING_END (never ERROR) with a
-// lexeme that swallows the sentinel byte. Filed as an open issue via
-// /issue rather than fixed here — this test exists to pin the current
-// (buggy) behavior, not to endorse it.
+// ---------------------------------------------------------------------------
+// f-strings
 //
-// Only ONE ScanToken() call is made on this scanner: Lexeme() here is
-// safe (its byte range ends exactly at the sentinel, still in bounds), but
-// a second ScanToken() call would peek() at the now out-of-bounds cursor —
-// do not extend this test to call ScanToken() again.
-func TestScanToken_FString_UnterminatedNoClose(t *testing.T) {
-	tok := scanTokenWithTimeout(t, lexer.NewScanner([]byte(`f"abc`+"\x00")))
+// Token scheme: text pieces carry the braces/quotes at their ends.
+//   f"a {x} b {y} c"  →  F_STRING_START `f"a {`  x  F_STRING_MID `} b {`
+//                        y  F_STRING_END `} c"`
+// ---------------------------------------------------------------------------
 
-	if tok.Type != token.F_STRING_END {
-		t.Fatalf("Type = %v, want F_STRING_END (current, buggy behavior — see ISSUES.md)", tok.Type)
+// An f-string with no holes is a single F_STRING_END token.
+func TestFStringNoInterpolation(t *testing.T) {
+	expectTokens(t, `f"hello"`, tk{token.F_STRING_END, `f"hello"`})
+}
+
+func TestFStringSingleInterpolation(t *testing.T) {
+	expectTokens(t, `f"a {b} c"`,
+		tk{token.F_STRING_START, `f"a {`},
+		tk{token.IDENTIFIER, `b`},
+		tk{token.F_STRING_END, `} c"`},
+	)
+}
+
+func TestFStringMultipleInterpolations(t *testing.T) {
+	expectTokens(t, `f"this {foo} text {bar} end"`,
+		tk{token.F_STRING_START, `f"this {`},
+		tk{token.IDENTIFIER, `foo`},
+		tk{token.F_STRING_MID, `} text {`},
+		tk{token.IDENTIFIER, `bar`},
+		tk{token.F_STRING_END, `} end"`},
+	)
+}
+
+func TestFStringEmptyInterpolation(t *testing.T) {
+	expectTokens(t, `f"{}"`,
+		tk{token.F_STRING_START, `f"{`},
+		tk{token.F_STRING_END, `}"`},
+	)
+}
+
+// Only `f` immediately followed by `"` starts an f-string.
+func TestFStringNeedsAdjacentQuote(t *testing.T) {
+	expectTokens(t, `f + "str"`,
+		tk{token.IDENTIFIER, "f"},
+		tk{token.PLUS, "+"},
+		tk{token.STRING, `"str"`},
+	)
+}
+
+// Braces inside a hole are ordinary braces. Only the '}' that balances the
+// hole's '{' closes it. (A single interpMode bool gets this wrong.)
+func TestFStringBracesInsideHole(t *testing.T) {
+	expectTokens(t, `f"a{ {1} }b"`,
+		tk{token.F_STRING_START, `f"a{`},
+		tk{token.LEFT_BRACE, "{"},
+		tk{token.NUMBER, "1"},
+		tk{token.RIGHT_BRACE, "}"},
+		tk{token.F_STRING_END, `}b"`},
+	)
+}
+
+// An f-string inside a hole of another f-string.
+func TestFStringNested(t *testing.T) {
+	expectTokens(t, `f"<{ f"[{x}]" }>"`,
+		tk{token.F_STRING_START, `f"<{`},
+		tk{token.F_STRING_START, `f"[{`},
+		tk{token.IDENTIFIER, "x"},
+		tk{token.F_STRING_END, `}]"`},
+		tk{token.F_STRING_END, `}>"`},
+	)
+}
+
+// A '}' with no open f-string is a plain RIGHT_BRACE.
+func TestRightBraceOutsideFString(t *testing.T) {
+	expectTokens(t, "}", tk{token.RIGHT_BRACE, "}"})
+}
+
+// No closing quote and no hole: one ERROR spanning to the end.
+func TestFStringUnterminated(t *testing.T) {
+	r := expectTokens(t, `f"abc`, tk{token.ERROR, `f"abc`})
+	expectOneDiagnostic(t, r, 0, 5)
+}
+
+// Source ends inside a hole: the tokens so far, then exactly one
+// diagnostic. Where the ERROR token sits is up to the scanner, so this
+// only checks the kinds and the diagnostic count.
+func TestFStringUnterminatedInsideHole(t *testing.T) {
+	r := scan(t, `f"abc {expr`)
+	var kinds []token.Kind
+	for _, tok := range r.toks {
+		kinds = append(kinds, tok.Type)
 	}
-	if got := tok.Lexeme(); got != "f\"abc\x00" {
-		t.Errorf("lexeme = %q, want \"f\\\"abc\\x00\" (lexeme wrongly includes the sentinel byte)", got)
+	want := []token.Kind{token.F_STRING_START, token.IDENTIFIER, token.ERROR, token.EOF}
+	if fmt.Sprint(kinds) != fmt.Sprint(want) {
+		t.Errorf("kinds = %v, want %v", kinds, want)
 	}
+	if len(r.diags) != 1 {
+		t.Errorf("got %d diagnostics, want 1", len(r.diags))
+	}
+}
+
+// After an unterminated f-string the scanner state is reset: a later '}'
+// on a fresh scan is a plain RIGHT_BRACE. (Separate scans share nothing.)
+func TestScansAreIndependent(t *testing.T) {
+	scan(t, `f"abc {expr`)
+	expectTokens(t, "}", tk{token.RIGHT_BRACE, "}"})
+}
+
+// ---------------------------------------------------------------------------
+// Newlines inside strings
+// ---------------------------------------------------------------------------
+
+// The byte right after a newline must still be checked: here it is the
+// closing quote.
+func TestStringClosesRightAfterNewline(t *testing.T) {
+	expectTokens(t, "\"a\n\"", tk{token.STRING, "\"a\n\""})
+}
+
+// Source ends right after a newline inside a string: an error, not a panic.
+func TestUnterminatedEndingInNewline(t *testing.T) {
+	r := expectTokens(t, "\"a\n", tk{token.ERROR, "\"a\n"})
+	expectOneDiagnostic(t, r, 0, 3)
+
+	r = expectTokens(t, "f\"a\n", tk{token.ERROR, "f\"a\n"})
+	expectOneDiagnostic(t, r, 0, 4)
+}
+
+// ---------------------------------------------------------------------------
+// Escapes: a backslash skips the next byte, in strings and f-strings.
+// The scanner only skips them; decoding happens when building the AST.
+// ---------------------------------------------------------------------------
+
+// `"a\\"` is an escaped backslash followed by the closing quote.
+func TestStringEscapedBackslash(t *testing.T) {
+	expectTokens(t, `"a\\"`, tk{token.STRING, `"a\\"`})
+}
+
+// A backslash as the very last byte: unterminated, and must not panic.
+func TestStringBackslashAtEnd(t *testing.T) {
+	r := expectTokens(t, `"abc\`, tk{token.ERROR, `"abc\`})
+	expectOneDiagnostic(t, r, 0, 5)
+}
+
+// \{ and \} are literal braces in f-string text: no hole is opened.
+func TestFStringEscapedBraces(t *testing.T) {
+	expectTokens(t, `f"\{x\}"`, tk{token.F_STRING_END, `f"\{x\}"`})
+}
+
+func TestFStringEscapedQuote(t *testing.T) {
+	expectTokens(t, `f"a\"b"`, tk{token.F_STRING_END, `f"a\"b"`})
+}
+
+// ---------------------------------------------------------------------------
+// f-string stack hygiene
+// ---------------------------------------------------------------------------
+
+// Closing a hole must pop the stack. After the f-string ends, a '}' is a
+// plain RIGHT_BRACE again.
+func TestFStringStackPopsOnClose(t *testing.T) {
+	expectTokens(t, `f"{x}" }`,
+		tk{token.F_STRING_START, `f"{`},
+		tk{token.IDENTIFIER, "x"},
+		tk{token.F_STRING_END, `}"`},
+		tk{token.RIGHT_BRACE, "}"},
+	)
+}
+
+// Complete f-strings must leave nothing open at EOF: no diagnostics.
+func TestFStringValidHasNoDiagnostics(t *testing.T) {
+	for _, src := range []string{
+		`f"{x}"`,
+		`f"a{b}c{d}e"`,
+		`f"a{ {1} }b"`,
+		`f"<{ f"[{x}]" }>"`,
+	} {
+		t.Run(src, func(t *testing.T) {
+			r := scan(t, src)
+			if len(r.diags) != 0 {
+				t.Errorf("got diagnostics for a valid f-string: %+v", r.diags)
+			}
+		})
+	}
+}
+
+// A quoted string inside a hole is one STRING token; its '}' never reaches
+// the brace logic.
+func TestFStringStringInsideHole(t *testing.T) {
+	expectTokens(t, `f"{ "}" }"`,
+		tk{token.F_STRING_START, `f"{`},
+		tk{token.STRING, `"}"`},
+		tk{token.F_STRING_END, `}"`},
+	)
 }
