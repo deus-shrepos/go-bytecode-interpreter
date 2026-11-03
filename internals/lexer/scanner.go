@@ -21,6 +21,7 @@ func newScanner(source []byte) *Scanner {
 	return &Scanner{
 		source: source,
 		lines:  make([]uint32, 1, bytes.Count(source, []byte{'\n'})+1),
+		// TODO: Need to measure tokens per bytes to come up with a reasonable number
 		tokens: make([]token.Token, 0, len(source)/8+1),
 		diags:  nil,
 	}
